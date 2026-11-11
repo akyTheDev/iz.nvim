@@ -1,0 +1,7 @@
+{
+  "runtime.version": "LuaJIT",
+  "workspace.library": ["$VIMRUNTIME", "${3rd}/luv/library"],
+  "workspace.ignoreDir": ["deps", "tests"],
+  "workspace.checkThirdParty": false,
+  "diagnostics.globals": ["vim", "MiniTest"]
+}

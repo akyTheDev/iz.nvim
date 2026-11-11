@@ -1,0 +1,155 @@
+*iz.txt*  Review agent-written code and send line-precise feedback back
+
+==============================================================================
+CONTENTS                                                         *iz-contents*
+
+  1. Introduction ............................................ |iz-intro|
+  2. Commands ................................................ |iz-commands|
+  3. Workspace and keys ...................................... |iz-keys|
+  4. Comments ................................................ |iz-comments|
+  5. Agents .................................................. |iz-agents|
+  6. Configuration ........................................... |iz-config|
+  7. Highlights .............................................. |iz-highlights|
+
+==============================================================================
+1. INTRODUCTION                                                     *iz-intro*
+
+iz reviews the changes an AI agent made, one task at a time.
+
+Session      One review loop for one task. Its diff is everything that changed
+             since the Base, a snapshot of the git index taken when the
+             Session opened.
+Hunk         A block of change between the Base and the working tree.
+Staged       A Hunk fully in the git index: you approved it. Anything not in
+             the index is Unstaged, including agent changes on top of approved
+             code and your own edits.
+Comment      Feedback on a line, a hunk, a file or the whole Session, with a
+             thread of Replies.
+Status       open, resolved or ignored. Only you set it.
+Claim        What the agent's latest Reply says: addressed, declined or
+             question. A Claim never closes a Comment.
+Brief        `.iz/brief.md`: the open Comments waiting for the agent.
+
+==============================================================================
+2. COMMANDS                                                      *iz-commands*
+
+:Iz                                                                      *:Iz*
+    Open the workspace for the repository at the current directory. Starts a
+    Session when none is active.
+
+:Iz comment
+    Comment on the whole Session.
+
+:Iz history
+    Pick a past Session and read its Comments and threads.
+
+:IzDone                                                              *:IzDone*
+    Close the active Session. When Comments are still open you choose between
+    closing them as ignored and cancelling.
+
+:IzExport                                                          *:IzExport*
+    Copy the Brief, with its inbox instructions, to the clipboard (or the
+    unnamed register when there is no clipboard).
+
+:IzInstallClaude[!]                                          *:IzInstallClaude*
+    Install the `/iz` skill and the Stop hook for Claude Code. With [!],
+    remove them. See |iz-agents|.
+
+==============================================================================
+3. WORKSPACE AND KEYS                                                *iz-keys*
+
+The workspace is a tab with the file list, the diff (Base or index on the
+left, the real file on the right) and the comment panel.
+
+File list ~
+  <CR>          open the file in the diff
+  s  u  x       stage / unstage / discard the file
+  U             undo the last discard
+  c             comment on the file
+  f             toggle "unstaged only"
+  p             toggle the comment panel
+  R  q          refresh / close
+
+Diff windows ~
+  ]h  [h        next / previous hunk, continuing into the next file
+  <leader>is    stage the hunk (visual: every hunk in the range)
+  <leader>iu    unstage the hunk
+  <leader>ix    discard the hunk's unapproved changes
+  <leader>iU    undo the last discard
+  <leader>ic    comment on the line (visual: the range)
+  <leader>iC    comment on the hunk
+  <leader>if    toggle "unstaged only": the left side becomes the index
+  <leader>ip    toggle the comment panel
+  <leader>iq    close the workspace
+
+Panel ~
+  <CR>          go to the comment
+  a             reply
+  r  i  o       resolve / ignore / reopen
+  m             move the comment to the cursor line of the diff
+  q             close the panel
+
+The right side is your real file. Edit and save it as usual; your changes
+show up as Unstaged. Hunk actions are refused while the file has unsaved
+changes. Discarded changes are kept in the Session's `trash/` directory.
+
+When a second Neovim opens the same repository, its workspace is read-only.
+
+==============================================================================
+4. COMMENTS                                                      *iz-comments*
+
+Comments are written in a floating markdown buffer. Save with <C-s> or `:w`,
+cancel with `q`. In insert mode <C-v> pastes a screenshot from the clipboard
+into the Session's `assets/` directory; without an image it inserts the next
+key literally, as usual.
+
+Each Comment remembers the code it is attached to. When the code moves, the
+Comment follows it by exact match only. When the code is gone, the Comment is
+marked "lost" and stays open; use `m` in the panel to attach it again.
+
+==============================================================================
+5. AGENTS                                                          *iz-agents*
+
+`/iz` in Claude Code reads `.iz/brief.md`, works through the Comments, and
+writes one JSON line per Comment to the inbox file named in the Brief: >json
+    {"id": "c_7f2a", "claim": "addressed", "note": "NotFoundError added"}
+<
+iz moves those lines into the threads and deletes the file. The Stop hook
+writes `.iz/stop` when Claude finishes a turn; iz refreshes and reports what
+changed. Any other agent can take part through |:IzExport|.
+
+==============================================================================
+6. CONFIGURATION                                                   *iz-config*
+
+>lua
+    require("iz").setup({
+      files_width = 42,
+      panel_width = 56,
+      keymaps = {
+        paste_image = "<C-v>",
+        files = { ... },
+        diff = { ... },
+        panel = { ... },
+      },
+    })
+<
+Every key in |iz-keys| can be changed; set it to "" to disable it. See the
+README for the full default table.
+
+==============================================================================
+7. HIGHLIGHTS                                                  *iz-highlights*
+
+All groups are defined with `default = true`.
+
+IzStaged            approved code in the diff (links to Comment)
+IzStagedMark        the "staged" badge
+IzNewSinceApproval  lines changed after their hunk was staged
+IzComment           comment text
+IzClaim             the agent's claim
+IzPartial           partly approved files and lost comments
+IzUnstaged          files with nothing approved yet
+IzDirectory         directory headers in the file list
+IzKindAdded IzKindChanged IzKindRemoved   change type in the file list
+IzMuted             secondary text
+
+ vim:tw=78:ts=8:ft=help:norl:
