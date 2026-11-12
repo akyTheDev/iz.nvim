@@ -1,5 +1,7 @@
 local M = {}
 
+M.version = require("iz.version")
+
 ---@param opts? table
 function M.setup(opts)
   if vim.fn.has("nvim-0.10") == 0 then

@@ -26,6 +26,7 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 ```lua
 {
   "akythedev/iz.nvim",
+  version = "*", -- latest release; drop it to follow main
   cmd = { "Iz", "IzDone", "IzExport", "IzInstallClaude" },
   opts = {},
 }

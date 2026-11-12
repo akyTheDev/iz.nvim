@@ -54,6 +54,7 @@ lua/iz/
   signal.lua         watches .iz/stop (written by the Stop hook)
   lifecycle.lua      :IzDone and session history
   health.lua         :checkhealth iz
+  version.lua        the release version, bumped by release-please
 doc/iz.txt           :help iz; keep it in sync with README.md when keys or commands change
   commands.lua       :Iz subcommand registry; plugin/iz.lua only wires commands
 tests/               test_*.lua (mini.test) + helpers.lua
@@ -107,6 +108,12 @@ tests/               test_*.lua (mini.test) + helpers.lua
 - A flaky test is a bug report, not noise. Run the suite several times after touching async or file-watching code; find the cause before adding waits (the racy-git fix came from one).
 - Tests that depend on the clock (same-second edits, debounce) say so in a comment and wait explicitly.
 - Tests reproduce the real order of events. The user usually opens `:Iz` *after* the agent worked, and `.iz/` may not exist when Neovim starts; tests that set things up in a friendlier order hid two bugs.
+
+## Commits and releases
+
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org): `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `ci:`, `chore:`. release-please reads them to pick the next version and write `CHANGELOG.md`, so the type matters: only `feat` and `fix` (and `!` for breaking changes) reach the changelog.
+- Mark breaking changes with `!` (`feat!: ...`) or a `BREAKING CHANGE:` footer. Before 1.0 they bump the minor version. A `session.SCHEMA_VERSION` bump, a removed command or a changed default key is breaking.
+- Don't edit `CHANGELOG.md`, `version.txt`, `lua/iz/version.lua` or `.release-please-manifest.json` by hand; merging the release PR that release-please opens on `main` updates them and tags the release (`vX.Y.Z`).
 
 ## Checking UI changes by eye
 

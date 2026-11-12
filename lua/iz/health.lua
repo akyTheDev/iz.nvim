@@ -3,6 +3,7 @@ local M = {}
 function M.check()
   local h = vim.health
   h.start("iz.nvim")
+  h.info("version " .. require("iz.version"))
 
   if vim.fn.has("nvim-0.10") == 1 then
     local v = vim.version()
