@@ -113,7 +113,7 @@ tests/               test_*.lua (mini.test) + helpers.lua
 ## Commits and releases
 
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org): `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `ci:`, `chore:`. release-please reads them to pick the next version and write `CHANGELOG.md`, so the type matters: only `feat` and `fix` (and `!` for breaking changes) reach the changelog.
-- Mark breaking changes with `!` (`feat!: ...`) or a `BREAKING CHANGE:` footer. Before 1.0 they bump the minor version. A `session.SCHEMA_VERSION` bump, a removed command or a changed default key is breaking.
+- Mark breaking changes with `!` (`feat!: ...`) or a `BREAKING CHANGE:` footer; they bump the major version, and users pinned to `1.x` won't get them until they choose to. A `session.SCHEMA_VERSION` bump, a removed command or a changed default key is breaking.
 - Don't edit `CHANGELOG.md`, `version.txt`, `lua/iz/version.lua` or `.release-please-manifest.json` by hand; merging the release PR that release-please opens on `main` updates them and tags the release (`vX.Y.Z`).
 
 ## Checking UI changes by eye

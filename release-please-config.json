@@ -5,7 +5,6 @@
       "release-type": "simple",
       "package-name": "iz.nvim",
       "include-component-in-tag": false,
-      "bump-minor-pre-major": true,
       "extra-files": ["lua/iz/version.lua"]
     }
   }
