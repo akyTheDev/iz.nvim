@@ -49,12 +49,6 @@ function M.check()
   else
     h.warn("image paste unavailable", { "Install wl-paste (Wayland) or xclip (X11)" })
   end
-
-  if pcall(require, "snacks") then
-    h.ok("snacks.nvim found")
-  else
-    h.info("snacks.nvim not found (optional)")
-  end
 end
 
 return M
