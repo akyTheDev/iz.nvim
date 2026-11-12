@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/akyTheDev/iz.nvim/compare/v1.0.0...v1.0.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* drop the unused snacks.nvim health check ([a6308ae](https://github.com/akyTheDev/iz.nvim/commit/a6308ae21d25f837fe131436485b86948e114df7))
+
 ## 1.0.0 (2026-11-12)
 
 
