@@ -1,5 +1,7 @@
 # iz.nvim
 
+**English** | [Türkçe](README.tr.md)
+
 Review the code your AI agent wrote without leaving Neovim, send it line-precise comments, and check its answers until the work is done.
 
 ```
@@ -132,4 +134,4 @@ Set a key to `""` to disable it. Highlight groups (`IzStaged`, `IzNewSinceApprov
 make test
 ```
 
-The domain language is in [CONTEXT.md](CONTEXT.md), the design decisions in [docs/adr/](docs/adr/), and the conventions for contributors and agents in [AGENTS.md](AGENTS.md).
+The domain language is in [CONTEXT.md](CONTEXT.md) and the conventions for contributors and agents in [AGENTS.md](AGENTS.md).

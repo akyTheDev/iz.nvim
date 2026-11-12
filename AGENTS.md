@@ -4,11 +4,9 @@ Guidance for AI agents and humans working on iz.nvim.
 
 ## What this is
 
-A Neovim plugin for reviewing code an AI agent wrote and sending line-precise feedback back to it. Read these before changing behaviour:
+A Neovim plugin for reviewing code an AI agent wrote and sending line-precise feedback back to it.
 
-- `CONTEXT.md`: the domain language. Use its terms (Session, Base, Hunk, Staged, Comment, Reply, Status, Claim, Anchor, Brief) in code, tests and messages; avoid the words it lists under _Avoid_.
-- `docs/adr/`: decisions that look surprising but are deliberate. Don't "fix" them without a new ADR.
-- `tasks/`: the MVP plan, one file per task, with notes on where the implementation deviated.
+Read `CONTEXT.md` before changing behaviour: it is the domain language. Use its terms (Session, Base, Hunk, Staged, Comment, Reply, Status, Claim, Anchor, Brief) in code, tests and messages; avoid the words it lists under _Avoid_.
 
 ## Commands
 
@@ -38,7 +36,7 @@ lua/iz/
   git/ops.lua        stage / unstage / discard / undo
   session/init.lua   session.json lifecycle (create, load, open, complete)
   storage/           .iz/ paths, atomic JSON, lock
-  diff/backend.lua   the diff-drawing seam (ADR 0001); native.lua is the only backend
+  diff/backend.lua   the diff-drawing seam; native.lua is the only backend
   ui/workspace.lua   the review tab: layout, actions, refresh, keymaps
   ui/files.lua       file list rendering (pure: render() returns lines + highlights)
   ui/highlights.lua  highlight groups (all `default = true`) and the shared namespace
@@ -68,7 +66,7 @@ tests/               test_*.lua (mini.test) + helpers.lua
 - **Async UI work must not race.** Anything that awaits and then replaces shared state (`W.view`, the file shown) runs inside `exclusive()` in `workspace.lua`. It is not re-entrant: call `show()` from inside it, never `exclusive()` again.
 - **One writer per file.** Neovim writes `session.json` (atomically, through `storage.write_json`); the agent writes only to `.iz/inbox/`. Keep it that way. A read-only Neovim re-reads `session.json` instead of trusting its copy, and reloads it when it takes the lock over. Only the lock owner consumes `.iz/stop`.
 - **Ids come from `util.random_hex`**, not `math.random`, which starts from the same seed in every Neovim.
-- **Approval lives in the git index** (ADR 0002). Don't add a "reviewed" flag.
+- **Approval lives in the git index.** Staged means approved. Don't add a "reviewed" flag: it would drift from what the user actually commits.
 - **Refuse stale operations.** Hunk ops recompute the file and fail with `ops.STALE` rather than apply a patch to code the user hasn't seen.
 - **`.iz/` stays invisible:** excluded via `.git/info/exclude`, never `.gitignore`, and filtered from every file list.
 - **Bump `session.SCHEMA_VERSION`** when `session.json` changes shape, and keep loading older versions or fail loudly; never silently overwrite.
@@ -128,4 +126,6 @@ You can stand in for the agent by editing files, writing `.iz/inbox/<brief-id>.j
 
 ## Language
 
-Code, comments, UI strings, the Brief and these docs are in English. Planning documents under `tasks/` are in Turkish.
+Code, comments, UI strings, the Brief and these docs are in English.
+
+`README.md` is the source of truth; `README.tr.md` is its Turkish translation. Change both in the same commit and keep the same sections in the same order, so a missing update shows up in the diff. Domain terms (Session, Hunk, Brief, Staged...) and everything in code blocks stay in English in the translation. `doc/iz.txt` is English only.

@@ -1,0 +1,137 @@
+# iz.nvim
+
+[English](README.md) | **Türkçe**
+
+AI agent'ının yazdığı kodu Neovim'den çıkmadan incele, satır satır yorum gönder ve iş bitene kadar cevaplarını kontrol et.
+
+```
+:Iz  →  incele, stage'le, yorum yaz  →  Claude Code'da /iz  →  agent düzeltir ve cevaplar  →  :Iz  →  … → :IzDone
+```
+
+- **Stage'lemek onay demek.** Beğendiğin Hunk'ı stage'le. Bir sonraki turda sadece henüz onaylamadıkların görünür; agent'ın onaylı kodun üstüne yaptığı değişiklikler de buna dahil.
+- **Yorumlar satırıyla birlikte gider.** Agent, ilgilenmesi gereken her yorum için `dosya:satır` içeren kısa bir Brief (`.iz/brief.md`) alır, belirsiz bir paragraf değil.
+- **Agent iddia eder, sen karar verirsin.** Agent `addressed`, `declined` ya da `question` diye cevaplar; bir yorumu çözülmüş saymak yalnızca sana kalır.
+- **Her görev için bir Session.** Her Session açıldığı andaki bir anlık görüntüyle karşılaştırılır, böylece önceki görevin commit'lenmemiş işi araya karışmaz.
+
+MCP sunucusu ya da arka planda çalışan bir süreç yok: Neovim ve agent yalnızca `.iz/` içindeki dosyalar üzerinden konuşur.
+
+## Gereksinimler
+
+- Neovim 0.10+ (karakter düzeyinde diff vurgusu için 0.12 önerilir)
+- git
+- İsteğe bağlı: yorumlara ekran görüntüsü yapıştırmak için `pngpaste` (macOS), `wl-paste` ya da `xclip` (Linux)
+
+## Kurulum
+
+[lazy.nvim](https://github.com/folke/lazy.nvim) ile:
+
+```lua
+{
+  "akythedev/iz.nvim",
+  version = "*", -- son sürüm; main'i takip etmek için kaldır
+  cmd = { "Iz", "IzDone", "IzExport", "IzInstallClaude" },
+  opts = {},
+}
+```
+
+Ardından bir kez:
+
+```vim
+:IzInstallClaude
+```
+
+Bu komut `/iz` skill'ini `~/.claude/skills/iz/SKILL.md` dosyasına yazar ve `~/.claude/settings.json` dosyasına bir Stop hook'u ekler; böylece iz, agent'ın turunu ne zaman bitirdiğini bilir. Hook, `.iz/` olmayan projelerde hiçbir şey yapmaz. `settings.json`'ın yanına bir yedek yazılır ve `:IzInstallClaude!` ikisini de geri kaldırır. Kurulumu `:checkhealth iz` ile kontrol edebilirsin.
+
+## Döngü
+
+1. Agent'a bir görev ver.
+2. `:Iz` çalışma alanını açar: solda dosyalar, ortanın solunda Base, ortanın sağında çalışma ağacı, yorum varsa en sağda yorum paneli.
+3. Onayladığını stage'le, onaylamadığına yorum yaz.
+4. Claude Code'da `/iz` çalıştır. Brief'i okur, kodu düzeltir ve cevaplarını `.iz/inbox/` altına yazar.
+5. iz cevapları ve değişiklikleri alır. Filtreyle (`<leader>if` / `f`) sadece henüz onaylamadıklarını görürsün.
+6. Düzeltmesini kontrol ettiğin yorumları çözülmüş say ya da cevap yazıp geri gönder.
+7. Görev bitince `:IzDone`, ardından bir sonrakine `:Iz` ile başla.
+
+Başka bir agent mı kullanıyorsun? `:IzExport`, inbox talimatlarıyla birlikte Brief'i panoya kopyalar. Dosya yazabilen her agent cevap verebilir.
+
+## Tuşlar
+
+| Nerede | Tuş | İşlem |
+| --- | --- | --- |
+| Dosya listesi | `<CR>` | dosyayı diff'te aç |
+| | `s` / `u` / `x` | dosyayı stage'le / unstage'le / değişiklikleri at |
+| | `U` | son atmayı geri al |
+| | `c` | dosyaya yorum yaz |
+| | `f` | "sadece unstaged" filtresini aç/kapat |
+| | `p` | yorum panelini aç/kapat |
+| | `R` / `q` | yenile / kapat |
+| Diff | `]h` / `[h` | sonraki / önceki hunk (sonraki dosyaya geçer) |
+| | `<leader>is` / `iu` / `ix` | hunk'ı stage'le / unstage'le / at (visual: aralıktaki tüm hunk'lar) |
+| | `<leader>iU` | son atmayı geri al |
+| | `<leader>ic` | satıra yorum yaz (visual: aralığa) |
+| | `<leader>iC` | hunk'a yorum yaz |
+| | `<leader>if` / `ip` / `iq` | filtre / panel / kapat |
+| Panel | `<CR>` | yoruma git |
+| | `a` | cevap yaz |
+| | `r` / `i` / `o` | çözüldü / yok say / yeniden aç |
+| | `m` | yorumu diff'teki imlecin olduğu satıra taşı |
+| Yorum editörü | `<C-s>` ya da `:w` | kaydet |
+| | `q` | vazgeç |
+| | `<C-v>` (insert) | ekran görüntüsü yapıştır (görüntü yoksa normal `<C-v>`) |
+
+Diff penceresindeki tuşlar `<leader>i` ile başlar, çünkü sağ taraf senin gerçek dosyandır ve düzenlenebilir kalır. Kendi düzenlemelerin de agent'ınkiler gibi Unstaged olarak görünür.
+
+## Komutlar
+
+| Komut | |
+| --- | --- |
+| `:Iz` | çalışma alanını açar, aktif Session yoksa yenisini başlatır |
+| `:Iz comment` | Session'ın tamamına yorum yazar (ekran görüntüsü eklenebilir) |
+| `:Iz history` | geçmiş Session'ları ve thread'lerini gösterir |
+| `:IzDone` | Session'ı kapatır; açık yorumlar onayından sonra yok sayılır |
+| `:IzExport` | Brief'i herhangi bir agent için kopyalar |
+| `:IzInstallClaude[!]` | Claude Code skill'ini ve hook'unu kurar (ya da kaldırır) |
+
+## Ayarlar
+
+Varsayılanlar, hepsi isteğe bağlı:
+
+```lua
+require("iz").setup({
+  files_width = 42,
+  panel_width = 56,
+  keymaps = {
+    paste_image = "<C-v>",
+    files = { open = "<CR>", stage = "s", unstage = "u", discard = "x", undo_discard = "U",
+              toggle_filter = "f", comment = "c", toggle_panel = "p", refresh = "R", close = "q" },
+    diff = { stage = "<leader>is", unstage = "<leader>iu", discard = "<leader>ix",
+             undo_discard = "<leader>iU", toggle_filter = "<leader>if", comment = "<leader>ic",
+             comment_hunk = "<leader>iC", toggle_panel = "<leader>ip", next_hunk = "]h",
+             prev_hunk = "[h", close = "<leader>iq" },
+    panel = { jump = "<CR>", reply = "a", resolve = "r", ignore = "i", reopen = "o",
+              move = "m", close = "q" },
+  },
+})
+```
+
+Bir tuşu kapatmak için `""` ver. Vurgu grupları (`IzStaged`, `IzNewSinceApproval`, `IzComment`, `IzClaim`, …) `default = true` ile tanımlıdır, yani renk temaların bunları ezebilir.
+
+## Dosyalar
+
+`.iz/` deponun kökünde durur ve `.git/info/exclude` dosyasına eklenir; `.gitignore` dosyana hiç dokunulmaz.
+
+```
+.iz/
+├── brief.md        agent'ın okuduğu dosya (Neovim yazar)
+├── inbox/          agent cevapları, her Brief için bir dosya (agent yazar)
+├── current         aktif Session'ın id'si
+└── sessions/<id>/  session.json, atılan hunk'lar (trash/), ekran görüntüleri (assets/)
+```
+
+## Geliştirme
+
+```sh
+make test
+```
+
+Alan dili [CONTEXT.md](CONTEXT.md) dosyasında, katkı verenler ve agent'lar için kurallar [AGENTS.md](AGENTS.md) dosyasında (ikisi de İngilizce).

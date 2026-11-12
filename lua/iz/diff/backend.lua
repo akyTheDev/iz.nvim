@@ -1,4 +1,4 @@
--- The seam between the workspace and whatever draws the diff (ADR 0001).
+-- The seam between the workspace and whatever draws the diff.
 -- Only the native `:diffthis` backend exists; an inline one can implement the
 -- same functions later.
 
