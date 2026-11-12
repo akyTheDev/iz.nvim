@@ -8,7 +8,9 @@ local comments = require("iz.session.comments")
 local config = require("iz.config")
 local editor = require("iz.ui.editor")
 local files_ui = require("iz.ui.files")
+local format = require("iz.ui.format")
 local git = require("iz.git")
+local help = require("iz.ui.help")
 local hl = require("iz.ui.highlights")
 local hunks = require("iz.git.hunks")
 local inbox = require("iz.inbox")
@@ -18,6 +20,7 @@ local ops = require("iz.git.ops")
 local panel = require("iz.ui.panel")
 local session_mod = require("iz.session")
 local storage = require("iz.storage")
+local thread = require("iz.ui.thread")
 local util = require("iz.util")
 
 local api = vim.api
@@ -106,13 +109,29 @@ end
 
 local function set_winbars()
   local mode = W.filter and "index · unstaged only" or "base"
-  local ro = W.readonly and " · read-only" or ""
-  vim.wo[W.wins.files].winbar = (" iz · %s%s"):format(W.session.id, ro)
+  local staged, total, open = 0, 0, 0
+  for _, f in ipairs(W.view.files) do
+    staged, total = staged + f.staged, total + f.staged + f.unstaged
+  end
+  for _, c in ipairs(W.session.data.comments) do
+    open = open + (c.status == "open" and 1 or 0)
+  end
+  local parts = { "iz", ("%d/%d staged"):format(staged, total) }
+  if open > 0 then
+    parts[#parts + 1] = open .. " open"
+  end
+  if W.readonly then
+    parts[#parts + 1] = "read-only"
+  end
+  local hint = config.options.keymaps.files.help
+  hint = (hint and hint ~= "") and ("%=" .. hint:gsub("%%", "%%%%") .. " keys ") or ""
+  vim.wo[W.wins.files].winbar = " " .. table.concat(parts, " · ") .. hint
   vim.wo[W.wins.left].winbar = " " .. mode
   vim.wo[W.wins.right].winbar = " " .. (W.path or "") .. " · working tree"
 end
 
 local function draw_files()
+  set_winbars()
   W.line_paths = files_ui.draw(W.files_buf, W.view.files, {
     filter = W.filter,
     width = config.options.files_width,
@@ -128,7 +147,7 @@ local function sync_panel()
   if want == nil then
     want = #W.session.data.comments > 0
   end
-  local open = W.panel.win and api.nvim_win_is_valid(W.panel.win)
+  local open = W.panel.win ~= nil and api.nvim_win_is_valid(W.panel.win)
   if want and not open then
     W.panel.win = api.nvim_open_win(W.panel.buf, false, {
       split = "right",
@@ -140,11 +159,23 @@ local function sync_panel()
     vim.wo[W.panel.win].signcolumn = "no"
     vim.wo[W.panel.win].winfixwidth = true
     vim.wo[W.panel.win].cursorline = true
-    vim.wo[W.panel.win].wrap = false
+    -- Messages wrap under their text, past the "    agent  " label.
+    vim.wo[W.panel.win].wrap = true
+    vim.wo[W.panel.win].linebreak = true
+    vim.wo[W.panel.win].breakindent = true
+    vim.wo[W.panel.win].breakindentopt = "shift:7"
     vim.wo[W.panel.win].winbar = " comments"
   elseif not want and open then
     api.nvim_win_close(W.panel.win, true)
     W.panel.win = nil
+  end
+  if want ~= open then
+    -- The panel takes its width from the right diff alone; share the rest evenly.
+    local left, right = W.wins.left, W.wins.right
+    if api.nvim_win_is_valid(left) and api.nvim_win_is_valid(right) then
+      local total = api.nvim_win_get_width(left) + api.nvim_win_get_width(right)
+      api.nvim_win_set_width(left, math.floor(total / 2))
+    end
   end
   if want then
     W.panel.ids = panel.draw(W.panel.buf, W.session)
@@ -465,6 +496,7 @@ end
 
 function M.actions.toggle_filter()
   W.filter = not W.filter
+  notify(W.filter and "showing unstaged changes only" or "showing every change since the Base")
   job(function()
     exclusive(function()
       draw_files()
@@ -473,12 +505,37 @@ function M.actions.toggle_filter()
   end)
 end
 
+--- Moves the cursor into the real file, on its first or last Hunk.
+---@param first boolean
+local function focus_hunk(first)
+  local ctx = diff_ctx()
+  if not ctx then
+    return
+  end
+  local targets = backend.targets(ctx, W.wins.right)
+  local line = first and targets[1] or targets[#targets]
+  api.nvim_set_current_win(W.wins.right)
+  api.nvim_win_set_cursor(W.wins.right, { math.max(line or 1, 1), 0 })
+end
+
+--- Back to the file list, on the file being shown.
+function M.actions.focus_files()
+  api.nvim_set_current_win(W.wins.files)
+  for line, path in pairs(W.line_paths) do
+    if path == W.path then
+      api.nvim_win_set_cursor(W.wins.files, { line, 0 })
+      return
+    end
+  end
+end
+
 function M.actions.open_under_cursor()
   local path = W.line_paths[vim.fn.line(".")]
   if path then
     job(function()
       exclusive(function()
         show(path)
+        focus_hunk(true)
       end)
     end)
   end
@@ -514,10 +571,7 @@ local function jump(dir)
           job(function()
             exclusive(function()
               show(next_file.path)
-              local targets = backend.targets(assert(diff_ctx()), W.wins.right)
-              local line = dir > 0 and targets[1] or targets[#targets]
-              api.nvim_set_current_win(W.wins.right)
-              api.nvim_win_set_cursor(W.wins.right, { math.max(line or 1, 1), 0 })
+              focus_hunk(dir > 0)
             end)
           end)
         end
@@ -648,10 +702,51 @@ function M.actions.comment_session()
   end)
 end
 
+--- The Comment on the cursor line of a diff window, an open one first.
+---@param win integer
+---@return iz.Comment?
+local function comment_on_line(win)
+  local side = win == W.wins.left and "old" or "new"
+  local line = vim.fn.line(".", win)
+  local found
+  -- With the filter on, the left side is the index: Base line numbers don't apply.
+  local list = (side == "old" and W.filter) and {} or comments.for_file(W.session, W.path or "")
+  for _, c in ipairs(list) do
+    local covers = c.line and c.line <= line and line <= (c.end_line or c.line)
+    if covers and (c.side or "new") == side then
+      if c.status == "open" then
+        return c
+      end
+      found = found or c
+    end
+  end
+  return found
+end
+
+--- Opens the panel and moves into it, on the Comment of the diff line the
+--- cursor was on. From inside the panel, closes it and goes back to the file.
 function M.actions.toggle_panel()
+  local from = api.nvim_get_current_win()
+  local c = (from == W.wins.left or from == W.wins.right) and comment_on_line(from) or nil
   local open = W.panel.win ~= nil and api.nvim_win_is_valid(W.panel.win)
-  W.panel.manual = not open
-  sync_panel()
+  if open and from ~= W.panel.win then
+    api.nvim_set_current_win(W.panel.win)
+  else
+    W.panel.manual = not open
+    sync_panel()
+    api.nvim_set_current_win(W.panel.manual and W.panel.win or W.wins.right)
+  end
+  if c and api.nvim_get_current_win() == W.panel.win then
+    local first
+    for line, id in pairs(W.panel.ids) do
+      if id == c.id and (not first or line < first) then
+        first = line
+      end
+    end
+    if first then
+      api.nvim_win_set_cursor(W.panel.win, { first, 0 })
+    end
+  end
 end
 
 ---@return iz.Comment?
@@ -660,45 +755,21 @@ local function comment_under_cursor()
   return id and comments.find(W.session, id) or nil
 end
 
-function M.actions.panel_jump()
-  local c = comment_under_cursor()
-  if not c or not c.file then
+---@param c iz.Comment
+local function reply(c)
+  if not writable() then
     return
   end
-  job(function()
-    exclusive(function()
-      if W.path ~= c.file then
-        if not W.view.by_path[c.file] then
-          notify(c.file .. " has no changes in this session")
-          return
-        end
-        show(c.file)
-      end
-      local win = c.side == "old" and W.wins.left or W.wins.right
-      api.nvim_set_current_win(win)
-      if c.line then
-        local max = api.nvim_buf_line_count(api.nvim_win_get_buf(win))
-        api.nvim_win_set_cursor(win, { math.min(c.line, max), 0 })
-      end
-    end)
-  end)
-end
-
-function M.actions.panel_reply()
-  local c = comment_under_cursor()
-  if not c or not writable() then
-    return
-  end
-  write("reply to " .. c.id, function(body, attachments)
+  write("reply · " .. format.location(c), function(body, attachments)
     comments.reply(W.session, c, body, attachments)
   end)
 end
 
 ---@param status "open"|"resolved"|"ignored"
+---@return fun(c: iz.Comment)
 local function set_status(status)
-  return function()
-    local c = comment_under_cursor()
-    if not c or not writable() then
+  return function(c)
+    if not writable() then
       return
     end
     comments.set_status(W.session, c, status)
@@ -706,9 +777,68 @@ local function set_status(status)
   end
 end
 
-M.actions.panel_resolve = set_status("resolved")
-M.actions.panel_ignore = set_status("ignored")
-M.actions.panel_reopen = set_status("open")
+---@param c iz.Comment
+local function open_thread(c)
+  thread.open(c, {
+    reply = reply,
+    resolve = set_status("resolved"),
+    ignore = set_status("ignored"),
+    reopen = set_status("open"),
+  })
+end
+
+--- Opens the thread, with the diff behind it moved to the Comment's code.
+function M.actions.panel_jump()
+  local c = comment_under_cursor()
+  if not c then
+    return
+  end
+  if not c.file then
+    open_thread(c)
+    return
+  end
+  job(function()
+    exclusive(function()
+      if W.path ~= c.file and W.view.by_path[c.file] then
+        show(c.file)
+      end
+      if W.path == c.file then
+        local win = c.side == "old" and W.wins.left or W.wins.right
+        api.nvim_set_current_win(win)
+        if c.line then
+          local max = api.nvim_buf_line_count(api.nvim_win_get_buf(win))
+          api.nvim_win_set_cursor(win, { math.min(c.line, max), 0 })
+        end
+      end
+      open_thread(c)
+    end)
+  end)
+end
+
+--- Opens the thread of the Comment on the cursor line of a diff window.
+function M.actions.open_thread()
+  local found = comment_on_line(diff_win())
+  if found then
+    open_thread(found)
+  else
+    notify("no comment on this line")
+  end
+end
+
+---@param fn fun(c: iz.Comment)
+local function on_panel_comment(fn)
+  return function()
+    local c = comment_under_cursor()
+    if c then
+      fn(c)
+    end
+  end
+end
+
+M.actions.panel_reply = on_panel_comment(reply)
+M.actions.panel_resolve = on_panel_comment(set_status("resolved"))
+M.actions.panel_ignore = on_panel_comment(set_status("ignored"))
+M.actions.panel_reopen = on_panel_comment(set_status("open"))
 
 function M.actions.done()
   if not writable() then
@@ -760,10 +890,15 @@ function map_diff_keys(buf)
   bufmap(buf, k.toggle_filter, M.actions.toggle_filter, "toggle unstaged-only filter")
   bufmap(buf, k.comment, M.actions.comment_line, "comment on line(s)", { "n", "x" })
   bufmap(buf, k.comment_hunk, M.actions.comment_hunk, "comment on hunk")
+  bufmap(buf, k.open_thread, M.actions.open_thread, "open the comment thread on this line")
   bufmap(buf, k.toggle_panel, M.actions.toggle_panel, "toggle comment panel")
+  bufmap(buf, k.focus_files, M.actions.focus_files, "go to the file list")
   bufmap(buf, k.next_hunk, M.actions.next_hunk, "next hunk")
   bufmap(buf, k.prev_hunk, M.actions.prev_hunk, "previous hunk")
   bufmap(buf, k.close, M.close, "close workspace")
+  bufmap(buf, k.help, function()
+    help.open("diff")
+  end, "show keys")
 end
 
 local function unmap_diff_keys()
@@ -780,8 +915,21 @@ local function unmap_diff_keys()
   W.mapped = {}
 end
 
+--- The `<leader>i` keys that aren't about a Hunk work in every iz window, so
+--- they do the same thing wherever the cursor is. Without them, `<leader>if`
+--- in the panel would run its plain `i` (ignore) key.
+---@param buf integer
+local function map_workspace_keys(buf)
+  local k = config.options.keymaps.diff
+  bufmap(buf, k.toggle_filter, M.actions.toggle_filter, "toggle unstaged-only filter")
+  bufmap(buf, k.toggle_panel, M.actions.toggle_panel, "toggle comment panel")
+  bufmap(buf, k.focus_files, M.actions.focus_files, "go to the file list")
+  bufmap(buf, k.close, M.close, "close workspace")
+end
+
 local function map_files_keys()
   local buf, k = W.files_buf, config.options.keymaps.files
+  map_workspace_keys(buf)
   bufmap(buf, k.open, M.actions.open_under_cursor, "open file")
   bufmap(buf, k.stage, M.actions.stage_file, "stage file")
   bufmap(buf, k.unstage, M.actions.unstage_file, "unstage file")
@@ -792,22 +940,32 @@ local function map_files_keys()
   bufmap(buf, k.toggle_panel, M.actions.toggle_panel, "toggle comment panel")
   bufmap(buf, k.refresh, M.refresh, "refresh")
   bufmap(buf, k.close, M.close, "close workspace")
+  bufmap(buf, k.help, function()
+    help.open("files")
+  end, "show keys")
 end
 
 local function map_panel_keys()
   local buf, k = W.panel.buf, config.options.keymaps.panel
-  bufmap(buf, k.jump, M.actions.panel_jump, "go to comment")
+  map_workspace_keys(buf)
+  bufmap(buf, k.jump, M.actions.panel_jump, "open the thread and go to its code")
   bufmap(buf, k.reply, M.actions.panel_reply, "reply")
   bufmap(buf, k.resolve, M.actions.panel_resolve, "resolve")
   bufmap(buf, k.ignore, M.actions.panel_ignore, "ignore")
   bufmap(buf, k.reopen, M.actions.panel_reopen, "reopen")
   bufmap(buf, k.move, M.actions.panel_move, "move to cursor line")
   bufmap(buf, k.close, M.actions.toggle_panel, "close panel")
+  bufmap(buf, k.help, function()
+    help.open("panel")
+  end, "show keys")
 end
 
 ---@param filetype string
-local function scratch(filetype)
+---@param name string shown instead of [Scratch]; a URL-like name is never taken
+---for a file path, so it can't clash with a real file
+local function scratch(filetype, name)
   local buf = api.nvim_create_buf(false, true)
+  pcall(api.nvim_buf_set_name, buf, name)
   vim.bo[buf].filetype = filetype
   vim.bo[buf].modifiable = false
   return buf
@@ -818,7 +976,7 @@ local function create_layout()
   local tab = api.nvim_get_current_tabpage()
   local right = api.nvim_get_current_win()
   local left = api.nvim_open_win(0, false, { split = "left", win = right })
-  local files_buf = scratch("iz-files")
+  local files_buf = scratch("iz-files", "iz://files")
   local files = api.nvim_open_win(files_buf, true, {
     split = "left",
     win = -1,
@@ -916,7 +1074,7 @@ function M._open()
     files_buf = files_buf,
     line_paths = {},
     filter = false,
-    panel = { buf = scratch("iz-panel"), ids = {} },
+    panel = { buf = scratch("iz-panel", "iz://comments"), ids = {} },
     mapped = {},
     watchers = {},
     augroup = api.nvim_create_augroup("iz.workspace", { clear = true }),
@@ -961,6 +1119,20 @@ function M._open()
         set_winbars()
       end
       M.schedule_refresh()
+    end,
+  })
+  api.nvim_create_autocmd("WinResized", {
+    group = W.augroup,
+    callback = function()
+      -- Inline comments are cut to their window's width.
+      local resized = vim.v.event.windows or {}
+      local ctx = W and diff_ctx()
+      if
+        ctx
+        and (vim.tbl_contains(resized, W.wins.left) or vim.tbl_contains(resized, W.wins.right))
+      then
+        inline.draw(ctx)
+      end
     end,
   })
   api.nvim_create_autocmd("TabClosed", {

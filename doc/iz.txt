@@ -62,13 +62,14 @@ The workspace is a tab with the file list, the diff (Base or index on the
 left, the real file on the right) and the comment panel.
 
 File list ~
-  <CR>          open the file in the diff
+  <CR>          open the file in the diff, cursor on its first hunk
   s  u  x       stage / unstage / discard the file
   U             undo the last discard
   c             comment on the file
   f             toggle "unstaged only"
-  p             toggle the comment panel
+  p             go to the comment panel; inside it, close it
   R  q          refresh / close
+  ?             list these keys
 
 Diff windows ~
   ]h  [h        next / previous hunk, continuing into the next file
@@ -78,16 +79,32 @@ Diff windows ~
   <leader>iU    undo the last discard
   <leader>ic    comment on the line (visual: the range)
   <leader>iC    comment on the hunk
+  <leader>ik    read the comment thread on this line
   <leader>if    toggle "unstaged only": the left side becomes the index
-  <leader>ip    toggle the comment panel
+  <leader>ip    go to the comment panel, on this line's comment if it has one;
+                inside the panel, close it
+  <leader>il    back to the file list, on the current file
   <leader>iq    close the workspace
+  <leader>i?    list these keys
+
+`<leader>if`, `<leader>ip`, `<leader>il` and `<leader>iq` work in every iz
+window, including the file list and the panel.
 
 Panel ~
-  <CR>          go to the comment
+  <CR>          open the thread and show its code behind it
   a             reply
   r  i  o       resolve / ignore / reopen
   m             move the comment to the cursor line of the diff
   q             close the panel
+  ?             list these keys
+
+Thread ~
+The whole conversation of one Comment in a float, opened with <CR> in the
+panel or <leader>ik on a commented line. The panel and the inline comments
+only show the start of each message.
+  a             reply
+  r  i  o       resolve / ignore / reopen
+  q  <Esc>      close
 
 The right side is your real file. Edit and save it as usual; your changes
 show up as Unstaged. Hunk actions are refused while the file has unsaved

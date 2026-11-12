@@ -45,6 +45,44 @@ T["opens a tab with the file list and a diff of the first file"] = function()
   H.eq(vim.wo[ws.wins.left].diff, true)
   H.eq(vim.wo[ws.wins.right].diff, true)
   H.eq(api.nvim_buf_get_lines(api.nvim_win_get_buf(ws.wins.left), 1, 2, false), { "line 2" })
+  -- Named, so tab lines and status lines don't say [Scratch].
+  H.eq(api.nvim_buf_get_name(ws.files_buf), "iz://files")
+end
+
+T["? lists the keys of the window, as configured"] = function()
+  local help = require("iz.ui.help")
+  local config = require("iz.config")
+  config.setup({ keymaps = { panel = { ignore = "" } } })
+  local lines = help.lines("panel")
+  config.setup()
+  H.eq(lines[1], " <CR>  open the thread and show its code")
+  H.eq(vim.tbl_contains(lines, " i     ignore"), false)
+
+  local root = H.repo({ ["a.txt"] = "a\n" })
+  H.write(root, "a.txt", "A\n")
+  local ws = open(root)
+  api.nvim_set_current_win(ws.wins.files)
+  api.nvim_feedkeys("?", "x", false)
+  H.eq(api.nvim_win_get_config(0).title[1][1], " iz · files ")
+  vim.cmd("close")
+end
+
+T["opening a file from the list puts the cursor on its first hunk"] = function()
+  local root = H.repo({ ["a.txt"] = "a\n", ["b.txt"] = H.lines(9) })
+  H.write(root, "a.txt", "A\n")
+  H.write(root, "b.txt", H.lines(9, { [6] = "six" }))
+  local ws = open(root)
+  api.nvim_set_current_win(ws.wins.files)
+  api.nvim_win_set_cursor(ws.wins.files, { 2, 0 })
+  workspace.actions.open_under_cursor()
+  wait()
+  H.eq(ws.path, "b.txt")
+  H.eq(api.nvim_get_current_win(), ws.wins.right)
+  H.eq(api.nvim_win_get_cursor(ws.wins.right)[1], 6)
+
+  workspace.actions.focus_files()
+  H.eq(api.nvim_get_current_win(), ws.wins.files)
+  H.eq(api.nvim_win_get_cursor(ws.wins.files)[1], 2)
 end
 
 T["staging from the diff marks the hunk and updates the list"] = function()
@@ -59,7 +97,8 @@ T["staging from the diff marks the hunk and updates the list"] = function()
 
   local file = ws.view.by_path["a.txt"]
   H.eq({ file.hunks[1].state, file.hunks[2].state }, { "staged", "unstaged" })
-  H.eq(files_lines(ws), { "M a.txt  +2 -2  ◐ partial" })
+  H.eq(files_lines(ws), { "M a.txt  +2 -2  ◐ 1/2" })
+  H.eq(vim.wo[ws.wins.files].winbar, " iz · 1/2 staged%=? keys ")
 
   local right = api.nvim_win_get_buf(ws.wins.right)
   local marks = api.nvim_buf_get_extmarks(right, hl.ns, 0, -1, { details = true })
@@ -141,6 +180,41 @@ end
 
 T["comments"] = MiniTest.new_set()
 
+T["comments"]["the workspace keys work in the panel without running its plain keys"] = function()
+  local root = H.repo({ ["a.txt"] = "a\n" })
+  H.write(root, "a.txt", "A\n")
+  local ws = open(root)
+  require("iz.session.comments").add(ws.session, { scope = "session", body = "x" })
+  workspace.refresh()
+  wait()
+  api.nvim_set_current_win(ws.panel.win)
+  api.nvim_win_set_cursor(ws.panel.win, { 2, 0 })
+  -- Real keys (the default leader is `\`): `<leader>if` must not fall through
+  -- to the panel's `i` (ignore).
+  api.nvim_feedkeys("\\if", "x", false)
+  wait()
+  H.eq(ws.filter, true)
+  H.eq(ws.session.data.comments[1].status, "open")
+end
+
+T["comments"]["the panel key opens the panel, moves into it, then closes it"] = function()
+  local root = H.repo({ ["a.txt"] = "a\n" })
+  H.write(root, "a.txt", "A\n")
+  local ws = open(root)
+  api.nvim_set_current_win(ws.wins.right)
+
+  workspace.actions.toggle_panel()
+  H.eq(api.nvim_get_current_win(), ws.panel.win)
+
+  api.nvim_set_current_win(ws.wins.right)
+  workspace.actions.toggle_panel()
+  H.eq(api.nvim_get_current_win(), ws.panel.win)
+
+  workspace.actions.toggle_panel()
+  H.eq(ws.panel.win, nil)
+  H.eq(api.nvim_get_current_win(), ws.wins.right)
+end
+
 T["comments"]["a line comment opens the panel, shows inline and counts in the list"] = function()
   local root = H.repo({ ["a.txt"] = H.lines(5) })
   H.write(root, "a.txt", H.lines(5, { [3] = "three" }))
@@ -158,8 +232,8 @@ T["comments"]["a line comment opens the panel, shows inline and counts in the li
   H.eq(api.nvim_win_is_valid(ws.panel.win), true)
   H.eq(panel_lines(ws), {
     "Waiting for the agent (1)",
-    "  a.txt:3  " .. c.id,
-    "    you: use a constant",
+    "  a.txt:3",
+    "    you    use a constant",
   })
   H.eq(files_lines(ws), { "M a.txt  +1 -1  ● new  1 open" })
 
@@ -168,6 +242,7 @@ T["comments"]["a line comment opens the panel, shows inline and counts in the li
   local marks = api.nvim_buf_get_extmarks(right, inline.ns, 0, -1, { details = true })
   H.eq(#marks, 1)
   H.eq(marks[1][2], 2)
+  H.eq(marks[1][4].virt_lines[1][2][1], "you: ")
   H.eq(marks[1][4].virt_lines[1][3][1], "use a constant")
 end
 
@@ -214,6 +289,125 @@ T["comments"]["panel actions resolve, reply and move"] = function()
   H.eq(require("iz.session").load(root, ws.session.id).data.comments[1].status, "resolved")
 end
 
+T["comments"]["the panel shows first and last messages; lost reads as line changed"] = function()
+  local c = {
+    id = "c_1", scope = "line", file = "a.txt", side = "new", line = 4, end_line = 4,
+    status = "open", attachments = {},
+    anchor = { snippet = "x", context_before = {}, state = "lost" },
+    thread = {
+      { author = "user", body = "first\nsecond line", ts = "" },
+      { author = "agent", claim = "question", body = "which one?", ts = "" },
+      { author = "user", body = "the first", ts = "" },
+      { author = "agent", claim = "addressed", body = "done", ts = "" },
+    },
+  }
+  local other = vim.deepcopy(c)
+  other.line, other.end_line, other.thread = 9, 9, { c.thread[2] }
+  local lines = require("iz.ui.panel").render({ data = { comments = { c, other } } })
+  H.eq(lines, {
+    "Waiting for you (2)",
+    "  a.txt:4 · line changed · addressed",
+    "    you    first ⏎ second line",
+    "    … 2 more",
+    "    agent  done",
+    "",
+    "  a.txt:9 · lost · question",
+    "    agent  which one?",
+  })
+end
+
+T["comments"]["an inline comment fits its window, label included"] = function()
+  local c = {
+    id = "c_1", scope = "line", file = "a.txt", side = "new", line = 1, end_line = 1,
+    status = "open", attachments = {},
+    anchor = { snippet = "x", context_before = {}, state = "lost" },
+    thread = {
+      { author = "user", body = "x", ts = "" },
+      { author = "agent", claim = "addressed", body = string.rep("long ", 20), ts = "" },
+    },
+  }
+  local chunks = require("iz.ui.inline").virt_lines(c, 40)[1]
+  H.eq(chunks[2][1], "addressed · line changed: ")
+  local text = table.concat(vim.tbl_map(function(ch)
+    return ch[1]
+  end, chunks))
+  H.eq(vim.fn.strchars(text), 40)
+  H.eq(vim.fn.strcharpart(text, 39), "…")
+end
+
+T["comments"]["opening the panel keeps the two diff sides the same width"] = function()
+  local root = H.repo({ ["a.txt"] = "a\n" })
+  H.write(root, "a.txt", "A\n")
+  local ws = open(root)
+  workspace.actions.toggle_panel()
+  local l, r = api.nvim_win_get_width(ws.wins.left), api.nvim_win_get_width(ws.wins.right)
+  H.eq(math.abs(l - r) <= 1, true)
+end
+
+T["comments"]["<CR> in the panel opens the whole thread, where r resolves it"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(5) })
+  H.write(root, "a.txt", H.lines(5, { [3] = "three" }))
+  local ws = open(root)
+  local long = string.rep("word ", 60) .. "END"
+  local c = require("iz.session.comments").add(ws.session, {
+    scope = "line", file = "a.txt", side = "new", line = 3, end_line = 3,
+    anchor = { snippet = "three", context_before = {}, state = "found" }, body = long,
+  })
+  workspace.refresh()
+  wait()
+  api.nvim_set_current_win(ws.panel.win)
+  api.nvim_win_set_cursor(ws.panel.win, { 2, 0 })
+  workspace.actions.panel_jump()
+  wait()
+
+  local float = api.nvim_get_current_win()
+  H.eq(api.nvim_win_get_config(float).relative, "editor")
+  local text = table.concat(api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+  H.eq(text:find("END", 1, true) ~= nil, true)
+  -- The diff behind it is on the Comment's code.
+  H.eq(api.nvim_win_get_cursor(ws.wins.right)[1], 3)
+
+  api.nvim_feedkeys("r", "x", false)
+  H.eq(c.status, "resolved")
+  H.eq(api.nvim_win_is_valid(float), false)
+end
+
+T["comments"]["going to the panel from a commented line lands on that comment"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(9) })
+  H.write(root, "a.txt", H.lines(9, { [2] = "two", [8] = "eight" }))
+  local ws = open(root)
+  local comments = require("iz.session.comments")
+  for line, text in pairs({ [2] = "two", [8] = "eight" }) do
+    comments.add(ws.session, {
+      scope = "line", file = "a.txt", side = "new", line = line, end_line = line,
+      anchor = { snippet = text, context_before = {}, state = "found" }, body = "on " .. line,
+    })
+  end
+  workspace.refresh()
+  wait()
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 8, 0 })
+  workspace.actions.toggle_panel()
+  H.eq(api.nvim_get_current_win(), ws.panel.win)
+  H.eq(api.nvim_get_current_line(), "  a.txt:8")
+end
+
+T["comments"]["the thread opens from the commented line in the diff"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(5) })
+  H.write(root, "a.txt", H.lines(5, { [3] = "three" }))
+  local ws = open(root)
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
+  workspace.actions.comment_line()
+  type_and_save("use a constant")
+
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
+  workspace.actions.open_thread()
+  H.eq(api.nvim_buf_get_lines(0, 0, -1, false), { "**you**", "use a constant" })
+  vim.cmd("close")
+end
+
 T["comments"]["anchors follow the code on refresh and get lost when it disappears"] = function()
   local root = H.repo({ ["a.txt"] = H.lines(5) })
   H.write(root, "a.txt", H.lines(5, { [3] = "three" }))
@@ -233,7 +427,7 @@ T["comments"]["anchors follow the code on refresh and get lost when it disappear
   workspace.refresh()
   wait()
   H.eq({ c.anchor.state, c.status }, { "lost", "open" })
-  H.eq(panel_lines(ws)[2], "  a.txt:4 (lost)  " .. c.id)
+  H.eq(panel_lines(ws)[2], "  a.txt:4 · lost")
 end
 
 T["comments"]["writes the Brief and picks up agent replies from the inbox"] = function()

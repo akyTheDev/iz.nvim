@@ -19,6 +19,7 @@ M.defaults = {
       toggle_panel = "p",
       refresh = "R",
       close = "q",
+      help = "?",
     },
     -- Diff windows: the right side is the real, editable file, so these must
     -- not shadow editing keys.
@@ -30,10 +31,13 @@ M.defaults = {
       toggle_filter = "<leader>if",
       comment = "<leader>ic",
       comment_hunk = "<leader>iC",
+      open_thread = "<leader>ik",
       toggle_panel = "<leader>ip",
+      focus_files = "<leader>il",
       next_hunk = "]h",
       prev_hunk = "[h",
       close = "<leader>iq",
+      help = "<leader>i?",
     },
     panel = {
       jump = "<CR>",
@@ -43,6 +47,7 @@ M.defaults = {
       reopen = "o",
       move = "m",
       close = "q",
+      help = "?",
     },
   },
 }

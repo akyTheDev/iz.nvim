@@ -58,28 +58,35 @@ Başka bir agent mı kullanıyorsun? `:IzExport`, inbox talimatlarıyla birlikte
 
 | Nerede | Tuş | İşlem |
 | --- | --- | --- |
-| Dosya listesi | `<CR>` | dosyayı diff'te aç |
+| Dosya listesi | `<CR>` | dosyayı diff'te aç ve ilk hunk'ına git |
 | | `s` / `u` / `x` | dosyayı stage'le / unstage'le / değişiklikleri at |
 | | `U` | son atmayı geri al |
 | | `c` | dosyaya yorum yaz |
 | | `f` | "sadece unstaged" filtresini aç/kapat |
-| | `p` | yorum panelini aç/kapat |
+| | `p` | yorum paneline git (panelin içindeyken: kapat) |
 | | `R` / `q` | yenile / kapat |
+| Her yerde | `?` (diff'te: `<leader>i?`) | bu penceredeki tuşları listele |
 | Diff | `]h` / `[h` | sonraki / önceki hunk (sonraki dosyaya geçer) |
 | | `<leader>is` / `iu` / `ix` | hunk'ı stage'le / unstage'le / at (visual: aralıktaki tüm hunk'lar) |
 | | `<leader>iU` | son atmayı geri al |
 | | `<leader>ic` | satıra yorum yaz (visual: aralığa) |
 | | `<leader>iC` | hunk'a yorum yaz |
-| | `<leader>if` / `ip` / `iq` | filtre / panel / kapat |
-| Panel | `<CR>` | yoruma git |
+| | `<leader>ik` | bu satırdaki yorumun thread'ini oku |
+| | `<leader>il` | dosya listesine dön |
+| | `<leader>if` / `ip` / `iq` | filtre / panele git / kapat |
+| Panel | `<CR>` | thread'i (konuşmanın tamamı) aç ve kodunu göster |
 | | `a` | cevap yaz |
 | | `r` / `i` / `o` | çözüldü / yok say / yeniden aç |
 | | `m` | yorumu diff'teki imlecin olduğu satıra taşı |
+| Thread | `a` / `r` / `i` / `o` | cevap yaz / çözüldü / yok say / yeniden aç |
+| | `q` / `<Esc>` | kapat |
 | Yorum editörü | `<C-s>` ya da `:w` | kaydet |
 | | `q` | vazgeç |
 | | `<C-v>` (insert) | ekran görüntüsü yapıştır (görüntü yoksa normal `<C-v>`) |
 
-Diff penceresindeki tuşlar `<leader>i` ile başlar, çünkü sağ taraf senin gerçek dosyandır ve düzenlenebilir kalır. Kendi düzenlemelerin de agent'ınkiler gibi Unstaged olarak görünür.
+Dosya listesinin başlığı ilerlemeyi gösterir: stage'lenen hunk sayısı / toplam ve açık yorumlar.
+
+Diff penceresindeki tuşlar `<leader>i` ile başlar, çünkü sağ taraf senin gerçek dosyandır ve düzenlenebilir kalır. Kendi düzenlemelerin de agent'ınkiler gibi Unstaged olarak görünür. `<leader>if`, `ip`, `il` ve `iq` dosya listesinde ve panelde de çalışır.
 
 ## Komutlar
 
@@ -103,13 +110,15 @@ require("iz").setup({
   keymaps = {
     paste_image = "<C-v>",
     files = { open = "<CR>", stage = "s", unstage = "u", discard = "x", undo_discard = "U",
-              toggle_filter = "f", comment = "c", toggle_panel = "p", refresh = "R", close = "q" },
+              toggle_filter = "f", comment = "c", toggle_panel = "p", refresh = "R", close = "q",
+              help = "?" },
     diff = { stage = "<leader>is", unstage = "<leader>iu", discard = "<leader>ix",
              undo_discard = "<leader>iU", toggle_filter = "<leader>if", comment = "<leader>ic",
-             comment_hunk = "<leader>iC", toggle_panel = "<leader>ip", next_hunk = "]h",
-             prev_hunk = "[h", close = "<leader>iq" },
+             comment_hunk = "<leader>iC", open_thread = "<leader>ik",
+             toggle_panel = "<leader>ip", focus_files = "<leader>il",
+             next_hunk = "]h", prev_hunk = "[h", close = "<leader>iq", help = "<leader>i?" },
     panel = { jump = "<CR>", reply = "a", resolve = "r", ignore = "i", reopen = "o",
-              move = "m", close = "q" },
+              move = "m", close = "q", help = "?" },
   },
 })
 ```

@@ -1,44 +1,36 @@
--- Open Comments drawn as virtual lines under the code they are anchored to.
+-- Open Comments drawn as one virtual line under the code they are anchored to:
+-- who spoke last and the start of what they said. The thread view has the rest.
 local comments = require("iz.session.comments")
+local format = require("iz.ui.format")
 
 local api = vim.api
 local M = {}
 
 M.ns = api.nvim_create_namespace("iz.comments")
 
-local MAX = 100
-
----@param text string
-local function first_line(text)
-  local line = text:match("^[^\n]*")
-  if vim.fn.strchars(line) > MAX then
-    line = vim.fn.strcharpart(line, 0, MAX - 1) .. "…"
-  end
-  return line
-end
-
 ---@param c iz.Comment
+---@param width integer columns available for the line
 ---@return table[] virt_lines
-function M.virt_lines(c)
-  local head = { { "  ┃ ", "IzComment" }, { c.id .. " ", "IzMuted" } }
-  local claim = comments.claim(c)
-  if claim then
-    head[#head + 1] = { "[" .. claim .. "] ", "IzClaim" }
+function M.virt_lines(c, width)
+  local last = comments.last(c)
+  -- A Claim already says the agent spoke.
+  local label = { comments.claim(c) or format.who(last) }
+  label[#label + 1] = format.anchor_state(c)
+  local chunks = {
+    { "  ┃ ", "IzComment" },
+    { table.concat(label, " · ") .. ": ", "IzMuted" },
+    { format.one_line(last.body), "IzComment" },
+  }
+  -- Virtual lines don't wrap: cut to the window, label included.
+  local room = width
+  for _, chunk in ipairs(chunks) do
+    local n = vim.fn.strchars(chunk[1])
+    if n > room then
+      chunk[1] = room > 1 and vim.fn.strcharpart(chunk[1], 0, room - 1) .. "…" or ""
+    end
+    room = math.max(room - n, 0)
   end
-  if c.anchor and c.anchor.state == "lost" then
-    head[#head + 1] = { ("(lost, was line %d) "):format(c.line), "IzPartial" }
-  end
-  head[#head + 1] = { first_line(c.thread[1].body), "IzComment" }
-  local out = { head }
-  if #c.thread > 1 then
-    local last = comments.last(c)
-    local who = last.author == "agent" and "agent" or "you"
-    out[#out + 1] = {
-      { "  ┃   ↳ " .. who .. ": ", "IzMuted" },
-      { first_line(last.body), "IzComment" },
-    }
-  end
-  return out
+  return { chunks }
 end
 
 ---@param ctx iz.DiffContext
@@ -50,13 +42,17 @@ function M.draw(ctx)
 
   for _, c in ipairs(comments.for_file(ctx.session, ctx.file.path)) do
     if c.status == "open" and c.line then
-      local buf = c.side == "old" and left or right
+      local old = c.side == "old"
+      local buf = old and left or right
       -- Base line numbers mean nothing against the index.
-      if not (c.side == "old" and ctx.left_rev == "index") then
+      if not (old and ctx.left_rev == "index") then
+        local win = old and ctx.left_win or ctx.right_win
+        local info = vim.fn.getwininfo(win)[1]
+        local width = api.nvim_win_get_width(win) - (info and info.textoff or 0)
         -- A lost comment stays at its last known line: the fix is usually right there.
         local row = math.min((c.end_line or c.line) - 1, api.nvim_buf_line_count(buf) - 1)
         pcall(api.nvim_buf_set_extmark, buf, M.ns, math.max(row, 0), 0, {
-          virt_lines = M.virt_lines(c),
+          virt_lines = M.virt_lines(c, width),
         })
       end
     end

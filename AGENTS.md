@@ -44,7 +44,10 @@ lua/iz/
   session/anchor.lua    capture and relocation of Anchors (exact match only)
   ui/editor.lua      floating markdown editor for comments and replies
   ui/inline.lua      open comments as virtual lines in the diff
-  ui/panel.lua       comment panel rendering (pure render + draw)
+  ui/panel.lua       comment panel rendering (pure render + draw): a summary per Comment
+  ui/thread.lua      a Comment's whole thread in a float, with reply/resolve keys
+  ui/help.lua        `?`: the keys of the current window, read from config
+  ui/format.lua      labels shared by panel, inline and thread (location, "line changed")
   clipboard.lua      clipboard image -> PNG file
   brief.lua          renders .iz/brief.md, the agent's only input
   inbox.lua          parses .iz/inbox/*.jsonl into agent Replies

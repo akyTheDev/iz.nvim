@@ -17,7 +17,7 @@ local function status_of(file)
   if file.unstaged == 0 then
     return "✓ staged", "IzStaged"
   elseif file.staged > 0 then
-    return "◐ partial", "IzPartial"
+    return ("◐ %d/%d"):format(file.staged, file.staged + file.unstaged), "IzPartial"
   end
   return "● new", "IzUnstaged"
 end

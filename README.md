@@ -58,28 +58,35 @@ Using another agent? `:IzExport` copies the Brief, inbox instructions included, 
 
 | Where | Key | Action |
 | --- | --- | --- |
-| File list | `<CR>` | open file in the diff |
+| File list | `<CR>` | open the file in the diff and jump to its first hunk |
 | | `s` / `u` / `x` | stage / unstage / discard the file |
 | | `U` | undo the last discard |
 | | `c` | comment on the file |
 | | `f` | toggle "unstaged only" |
-| | `p` | toggle the comment panel |
+| | `p` | go to the comment panel (from inside it: close it) |
 | | `R` / `q` | refresh / close |
+| Everywhere | `?` (diff: `<leader>i?`) | list the keys of this window |
 | Diff | `]h` / `[h` | next / previous hunk (continues into the next file) |
 | | `<leader>is` / `iu` / `ix` | stage / unstage / discard hunk (visual: every hunk in range) |
 | | `<leader>iU` | undo the last discard |
 | | `<leader>ic` | comment on the line (visual: on the range) |
 | | `<leader>iC` | comment on the hunk |
-| | `<leader>if` / `ip` / `iq` | filter / panel / close |
-| Panel | `<CR>` | go to the comment |
+| | `<leader>ik` | read the comment thread on this line |
+| | `<leader>il` | back to the file list |
+| | `<leader>if` / `ip` / `iq` | filter / go to panel / close |
+| Panel | `<CR>` | open the thread (whole conversation) and show its code |
 | | `a` | reply |
 | | `r` / `i` / `o` | resolve / ignore / reopen |
 | | `m` | move a comment to the cursor line in the diff |
+| Thread | `a` / `r` / `i` / `o` | reply / resolve / ignore / reopen |
+| | `q` / `<Esc>` | close |
 | Comment editor | `<C-s>` or `:w` | save |
 | | `q` | cancel |
 | | `<C-v>` (insert) | paste a screenshot (falls back to normal `<C-v>`) |
 
-Diff-window keys use `<leader>i` because the right side is your real file and stays editable. Your own edits show up as Unstaged like the agent's.
+The file list's title keeps score: hunks staged out of all, and open comments.
+
+Diff-window keys use `<leader>i` because the right side is your real file and stays editable. Your own edits show up as Unstaged like the agent's. `<leader>if`, `ip`, `il` and `iq` also work in the file list and the panel.
 
 ## Commands
 
@@ -103,13 +110,15 @@ require("iz").setup({
   keymaps = {
     paste_image = "<C-v>",
     files = { open = "<CR>", stage = "s", unstage = "u", discard = "x", undo_discard = "U",
-              toggle_filter = "f", comment = "c", toggle_panel = "p", refresh = "R", close = "q" },
+              toggle_filter = "f", comment = "c", toggle_panel = "p", refresh = "R", close = "q",
+              help = "?" },
     diff = { stage = "<leader>is", unstage = "<leader>iu", discard = "<leader>ix",
              undo_discard = "<leader>iU", toggle_filter = "<leader>if", comment = "<leader>ic",
-             comment_hunk = "<leader>iC", toggle_panel = "<leader>ip", next_hunk = "]h",
-             prev_hunk = "[h", close = "<leader>iq" },
+             comment_hunk = "<leader>iC", open_thread = "<leader>ik",
+             toggle_panel = "<leader>ip", focus_files = "<leader>il",
+             next_hunk = "]h", prev_hunk = "[h", close = "<leader>iq", help = "<leader>i?" },
     panel = { jump = "<CR>", reply = "a", resolve = "r", ignore = "i", reopen = "o",
-              move = "m", close = "q" },
+              move = "m", close = "q", help = "?" },
   },
 })
 ```
