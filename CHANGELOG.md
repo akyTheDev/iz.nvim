@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/akyTheDev/iz.nvim/compare/v1.1.0...v2.0.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* session.json is now schema version 2 (Co-reviewer messages and Summaries). Version 1 sessions load and are upgraded on save, but older iz versions refuse sessions written by this one. Run :IzInstallClaude once to install the new skills.
+
+### Features
+
+* co-reviewer, summaries, reading tab and review UI fixes ([#6](https://github.com/akyTheDev/iz.nvim/issues/6)) ([274c1e1](https://github.com/akyTheDev/iz.nvim/commit/274c1e14b475c6a5cc362fe3adea35ea0bdcb43c))
+
 ## [1.1.0](https://github.com/akyTheDev/iz.nvim/compare/v1.0.1...v1.1.0) (2026-11-13)
 
 
