@@ -84,7 +84,7 @@ Başka bir agent mı kullanıyorsun? `:IzExport`, inbox talimatlarıyla birlikte
 | | `q` | vazgeç |
 | | `<C-v>` (insert) | ekran görüntüsü yapıştır (görüntü yoksa normal `<C-v>`) |
 
-Dosya listesinin başlığı ilerlemeyi gösterir: stage'lenen hunk sayısı / toplam ve açık yorumlar.
+Dosya listesinin başlığı ilerlemeyi gösterir: stage'lenen hunk sayısı / toplam ve açık yorumlar. Listede imleçle gezinirken her dosya diff'te görünür, sen listede kalırsın; `<CR>` dosyanın içine geçer. Kapatmak için `preview_on_move = false`.
 
 Diff penceresindeki tuşlar `<leader>i` ile başlar, çünkü sağ taraf senin gerçek dosyandır ve düzenlenebilir kalır. Kendi düzenlemelerin de agent'ınkiler gibi Unstaged olarak görünür. `<leader>if`, `ip`, `il` ve `iq` dosya listesinde ve panelde de çalışır.
 
@@ -107,6 +107,7 @@ Varsayılanlar, hepsi isteğe bağlı:
 require("iz").setup({
   files_width = 42,
   panel_width = 56,
+  preview_on_move = true, -- diff, dosya listesindeki imleci takip eder
   keymaps = {
     paste_image = "<C-v>",
     files = { open = "<CR>", stage = "s", unstage = "u", discard = "x", undo_discard = "U",

@@ -15,6 +15,8 @@ local groups = {
   IzMuted = { link = "Comment" },
   IzComment = { link = "DiagnosticInfo" },
   IzClaim = { link = "DiagnosticHint" },
+  IzThreadUser = { link = "Title" },
+  IzThreadAgent = { link = "Special" },
 }
 
 function M.setup()
