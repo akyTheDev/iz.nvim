@@ -1,11 +1,18 @@
 -- A Comment's whole thread in a float: where long messages are read and
 -- answered. The panel and the inline comments only summarise.
+local comments = require("iz.session.comments")
 local config = require("iz.config")
 local format = require("iz.ui.format")
 local hl = require("iz.ui.highlights")
 
 local api = vim.api
 local M = {}
+
+local AUTHOR_HL = {
+  user = "IzThreadUser",
+  agent = "IzThreadAgent",
+  coreviewer = "IzThreadCoreviewer",
+}
 
 ---@param c iz.Comment
 ---@return string[] lines, table[] marks `{ line, group, first_col, last_col }`, 1-based line
@@ -30,11 +37,15 @@ function M.render(c)
       head = head .. " · " .. m.claim
     end
     lines[#lines + 1] = head
-    marks[#marks + 1] = { #lines, who == "agent" and "IzThreadAgent" or "IzThreadUser", 0, #who }
+    marks[#marks + 1] = { #lines, AUTHOR_HL[m.author] or "IzThreadUser", 0, #who }
     if #head > #who then
       marks[#marks + 1] = { #lines, "IzClaim", #who, #head }
     end
-    vim.list_extend(lines, vim.split(m.body, "\n"))
+    local body = format.body(m)
+    vim.list_extend(lines, vim.split(body, "\n"))
+    if body ~= m.body then
+      marks[#marks + 1] = { #lines, "IzMuted", 0, #body }
+    end
   end
   return lines, marks
 end
@@ -44,6 +55,7 @@ end
 ---@field resolve fun(c: iz.Comment)
 ---@field ignore fun(c: iz.Comment)
 ---@field reopen fun(c: iz.Comment)
+---@field send fun(c: iz.Comment)
 
 ---@param c iz.Comment
 ---@param actions iz.ThreadActions
@@ -72,7 +84,9 @@ function M.open(c, actions)
 
   local k = config.options.keymaps.panel
   local hints = {}
+  local send = comments.suggested(c) and k.send or nil
   for _, h in ipairs({
+    { send, "send" },
     { k.reply, "reply" },
     { k.resolve, "resolve" },
     { k.ignore, "ignore" },
@@ -120,6 +134,7 @@ function M.open(c, actions)
       end, o)
     end
   end
+  map(send, actions.send)
   map(k.reply, actions.reply)
   map(k.resolve, actions.resolve)
   map(k.ignore, actions.ignore)

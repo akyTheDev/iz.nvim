@@ -18,10 +18,14 @@ local M = {}
 -- A file this old with a broken last line is not being written any more.
 M.STALE_AFTER = 10
 
+--- Decodes a JSONL file an agent wrote; `check` turns each object into an
+--- entry or says what is wrong with it.
 ---@param content string
 ---@param final? boolean treat an unfinished last line as an error instead of waiting
----@return table[]? entries, string[] errors; entries nil when the file is still being written
-function M.parse(content, final)
+---@param check fun(value: table, source?: string): any?, string?
+---@param source? string path of the file being decoded, passed on to `check`
+---@return any[]? entries, string[] errors; entries nil when the file is still being written
+function M.decode(content, final, check, source)
   local lines = vim.split(content, "\n", { plain = true })
   local complete = final or content:sub(-1) == "\n"
   if content:sub(-1) == "\n" then
@@ -37,27 +41,50 @@ function M.parse(content, final)
           return nil, {}
         end
         errors[#errors + 1] = ("line %d: not valid JSON"):format(i)
-      elseif type(value.id) ~= "string" or not comments.CLAIMS[value.claim] then
-        errors[#errors + 1] =
-          ("line %d: needs an id and a claim of addressed, declined or question"):format(i)
       else
-        entries[#entries + 1] = {
-          id = value.id,
-          claim = value.claim,
-          note = type(value.note) == "string" and value.note or "",
-        }
+        local entry, err = check(value, source)
+        if entry then
+          entries[#entries + 1] = entry
+        else
+          errors[#errors + 1] = ("line %d: %s"):format(i, err)
+        end
       end
     end
   end
   return entries, errors
 end
 
---- Reads every inbox file into the Session. Saves once when anything changed.
----@param session iz.Session
----@return iz.IngestResult
-function M.ingest(session)
-  local dir = storage.inbox_dir(session.root)
-  local result = { replies = 0, questions = 0, unknown = {}, failed = {}, waiting = {} }
+---@param value table
+local function reply(value)
+  if type(value.id) ~= "string" or not comments.CLAIMS[value.claim] then
+    return nil, "needs an id and a claim of addressed, declined or question"
+  end
+  return {
+    id = value.id,
+    claim = value.claim,
+    note = type(value.note) == "string" and value.note or "",
+  }
+end
+
+---@param content string
+---@param final? boolean treat an unfinished last line as an error instead of waiting
+---@return table[]? entries, string[] errors; entries nil when the file is still being written
+function M.parse(content, final)
+  return M.decode(content, final, reply)
+end
+
+---@class iz.DrainedFile
+---@field name string
+---@field entries any[]
+---@field errors string[]
+
+--- Reads every `*.jsonl` file in `dir`, oldest name first. Files still being
+--- written are left for later; the rest are deleted, or moved to `failed/`
+--- when a line was invalid. The valid lines of a failed file still count.
+---@param dir string
+---@param check fun(value: table, source?: string): any?, string? `source` is the file's path
+---@return iz.DrainedFile[] done, string[] waiting
+function M.drain(dir, check)
   local names = {}
   for name, kind in vim.fs.dir(dir) do
     if kind == "file" and name:match("%.jsonl$") then
@@ -65,35 +92,49 @@ function M.ingest(session)
     end
   end
   table.sort(names)
-
-  local ts = util.now()
+  local done, waiting = {}, {}
   for _, name in ipairs(names) do
     local path = dir .. "/" .. name
     local stat = vim.uv.fs_stat(path)
     local stale = stat and os.time() - stat.mtime.sec > M.STALE_AFTER
-    local entries, errors = M.parse(storage.read_file(path) or "", stale)
+    local entries, errors = M.decode(storage.read_file(path) or "", stale, check, path)
     if not entries then
-      table.insert(result.waiting, name)
+      waiting[#waiting + 1] = name
     else
-      for _, e in ipairs(entries) do
-        local c = comments.find(session, e.id)
-        if c then
-          comments.agent_reply(session, c, e.claim, e.note, ts)
-          result.replies = result.replies + 1
-          if e.claim == "question" then
-            result.questions = result.questions + 1
-          end
-        else
-          table.insert(result.unknown, e.id)
-        end
-      end
       if #errors > 0 then
         storage.mkdirp(dir .. "/failed")
         vim.uv.fs_rename(path, dir .. "/failed/" .. name)
-        table.insert(result.failed, name .. " (" .. table.concat(errors, "; ") .. ")")
       else
         os.remove(path)
       end
+      done[#done + 1] = { name = name, entries = entries, errors = errors }
+    end
+  end
+  return done, waiting
+end
+
+--- Reads every inbox file into the Session. Saves once when anything changed.
+---@param session iz.Session
+---@return iz.IngestResult
+function M.ingest(session)
+  local done, waiting = M.drain(storage.inbox_dir(session.root), reply)
+  local result = { replies = 0, questions = 0, unknown = {}, failed = {}, waiting = waiting }
+  local ts = util.now()
+  for _, file in ipairs(done) do
+    for _, e in ipairs(file.entries) do
+      local c = comments.find(session, e.id)
+      if c then
+        comments.agent_reply(session, c, e.claim, e.note, ts)
+        result.replies = result.replies + 1
+        if e.claim == "question" then
+          result.questions = result.questions + 1
+        end
+      else
+        table.insert(result.unknown, e.id)
+      end
+    end
+    if #file.errors > 0 then
+      table.insert(result.failed, file.name .. " (" .. table.concat(file.errors, "; ") .. ")")
     end
   end
   if result.replies > 0 then

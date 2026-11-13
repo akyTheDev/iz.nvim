@@ -8,22 +8,27 @@ local hl = require("iz.ui.highlights")
 local api = vim.api
 local M = {}
 
+local WHO_HL = { agent = "IzClaim", coreviewer = "IzSuggestion" }
+
 ---@param session iz.Session
 ---@return string[] lines, table<integer, string> ids, table[] marks
 function M.render(session)
   local for_you = { title = "Waiting for you", items = {} }
+  local suggested = { title = "Suggested by the co-reviewer", items = {} }
   local for_agent = { title = "Waiting for the agent", items = {} }
   local closed = { title = "Closed", items = {}, collapsed = true }
   for _, c in ipairs(session.data.comments) do
     local g = closed
     if comments.awaiting_user(c) then
       g = for_you
+    elseif comments.suggested(c) then
+      g = suggested
     elseif comments.awaiting_agent(c) then
       g = for_agent
     end
     table.insert(g.items, c)
   end
-  local groups = { for_you, for_agent, closed }
+  local groups = { for_you, suggested, for_agent, closed }
   -- Session comments first, then by file and line.
   for _, g in ipairs(groups) do
     table.sort(g.items, function(a, b)
@@ -47,8 +52,9 @@ function M.render(session)
   ---@param m iz.Message
   local function message(c, m)
     local who = format.who(m)
-    add(("    %-5s  %s"):format(who, format.one_line(m.body)), c.id,
-      who == "agent" and "IzClaim" or "IzMuted", { 4, 9 })
+    local group = WHO_HL[m.author] or "IzMuted"
+    add(("    %-5s  %s"):format(who, format.one_line(format.body(m))), c.id, group,
+      { 4, 4 + math.max(#who, 5) })
   end
 
   for _, g in ipairs(groups) do

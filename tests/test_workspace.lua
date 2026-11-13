@@ -469,6 +469,150 @@ T["comments"]["the thread float is roomy and keeps markdown rendered under the c
   vim.cmd("close")
 end
 
+T["summary"] = MiniTest.new_set()
+
+--- Real order: the agent ran /iz-summary before :Iz.
+local function repo_with_summary()
+  local root = H.repo({ ["a.txt"] = H.lines(5), ["b.txt"] = H.lines(5) })
+  H.write(root, "a.txt", H.lines(5, { [3] = "three" }))
+  H.write(root, "b.txt", H.lines(5, { [4] = "four" }))
+  H.write(root, ".iz/summaries/20261113-120000.jsonl", vim.json.encode({
+    file = "a.txt",
+    summary = "Line three now names the constant the parser expects.",
+  }) .. "\n")
+  return root
+end
+
+--- The leaves of `layout` (from winlayout()), depth first.
+local function leaves(layout)
+  if layout[1] == "leaf" then
+    return { layout[2] }
+  end
+  local out = {}
+  for _, child in ipairs(layout[2]) do
+    vim.list_extend(out, leaves(child))
+  end
+  return out
+end
+
+T["summary"]["a strip above both diff sides shows it, only for a file that has one"] = function()
+  local root = repo_with_summary()
+  local ws = open(root)
+  H.eq(ws.path, "a.txt")
+  local strip = assert(ws.summary.win)
+  H.eq(api.nvim_buf_get_lines(api.nvim_win_get_buf(strip), 0, -1, false), {
+    "Line three now names the constant the parser expects.",
+  })
+  H.eq(vim.wo[strip].statusline, " a.txt · agent says")
+  -- One column: the strip on top, the two diff sides side by side under it.
+  local col = vim.tbl_filter(function(node)
+    return node[1] == "col"
+  end, vim.fn.winlayout()[2])[1]
+  H.eq(leaves(col), { strip, ws.wins.left, ws.wins.right })
+  H.eq(col[2][2][1], "row")
+  H.eq({ vim.wo[ws.wins.left].diff, vim.wo[ws.wins.right].diff }, { true, true })
+
+  -- The panel stays full height beside it, and the narrower strip grows to fit.
+  local strip_buf = api.nvim_win_get_buf(strip)
+  vim.bo[strip_buf].modifiable = true
+  api.nvim_buf_set_lines(strip_buf, 0, -1, false, { string.rep("word ", 30) })
+  vim.bo[strip_buf].modifiable = false
+  local before = api.nvim_win_get_height(strip)
+  workspace.actions.toggle_panel()
+  H.eq(api.nvim_win_get_height(strip) > before, true)
+  local top = vim.tbl_map(function(node)
+    return node[1] == "leaf" and node[2] or node[1]
+  end, vim.fn.winlayout()[2])
+  H.eq(top, { ws.wins.files, "col", ws.panel.win })
+  workspace.actions.toggle_panel()
+
+  api.nvim_set_current_win(ws.wins.files)
+  api.nvim_win_set_cursor(ws.wins.files, { 2, 0 })
+  workspace.actions.open_under_cursor()
+  wait()
+  H.eq(ws.path, "b.txt")
+  H.eq(api.nvim_win_is_valid(strip), false)
+  H.eq({ vim.wo[ws.wins.left].diff, vim.wo[ws.wins.right].diff }, { true, true })
+  local l, r = api.nvim_win_get_width(ws.wins.left), api.nvim_win_get_width(ws.wins.right)
+  H.eq(math.abs(l - r) <= 1, true)
+end
+
+T["summary"]["the strip says when the file changed after the summary"] = function()
+  local root = repo_with_summary()
+  local ws = open(root)
+  H.write(root, "a.txt", H.lines(5, { [3] = "three", [5] = "five" }))
+  workspace.refresh()
+  wait()
+  local label = vim.wo[ws.summary.win].statusline
+  H.eq(label, " a.txt · agent says · outdated: the file changed since")
+end
+
+T["co-reviewer"] = MiniTest.new_set()
+
+--- Real order: the co-reviewer ran before :Iz, maybe before `.iz/` existed.
+local function repo_with_suggestions()
+  local root = H.repo({ ["a.txt"] = H.lines(5) })
+  H.write(root, "a.txt", H.lines(5, { [3] = "three" }))
+  H.write(root, ".iz/coreview/20261113-120000.jsonl", table.concat({
+    vim.json.encode({ file = "a.txt", line = 3, body = "three is a magic number" }),
+    vim.json.encode({ file = "a.txt", body = "no test covers this" }),
+  }, "\n") .. "\n")
+  return root
+end
+
+T["co-reviewer"]["suggestions written before :Iz show up in their own group"] = function()
+  local root = repo_with_suggestions()
+  local ws = open(root)
+  H.eq(panel_lines(ws), {
+    "Suggested by the co-reviewer (2)",
+    "  a.txt",
+    "    co-reviewer  no test covers this",
+    "",
+    "  a.txt:3",
+    "    co-reviewer  three is a magic number",
+  })
+  -- `.iz/` stays out of git even though the co-reviewer created it.
+  H.eq(H.git(root, { "status", "--porcelain" }), "M a.txt")
+  H.eq(vim.uv.fs_stat(root .. "/.iz/coreview/20261113-120000.jsonl"), nil)
+end
+
+T["co-reviewer"]["s sends a suggestion as it is and I ignores the rest"] = function()
+  local root = repo_with_suggestions()
+  local ws = open(root)
+  api.nvim_set_current_win(ws.panel.win)
+  api.nvim_win_set_cursor(ws.panel.win, { 5, 0 })
+  api.nvim_feedkeys("s", "x", false)
+  local sent = ws.session.data.comments[1]
+  H.eq(sent.thread[2], { author = "user", body = "", ts = sent.thread[2].ts })
+  H.eq(panel_lines(ws)[1], "Suggested by the co-reviewer (1)")
+  H.eq(vim.tbl_contains(panel_lines(ws), "    you    sent to the agent"), true)
+  local text = H.read(root, ".iz/brief.md")
+  H.eq(text:find(sent.id .. " L3: three is a magic number", 1, true) ~= nil, true)
+  -- Inline, the diff still says what was sent.
+  local chunks = vim.tbl_map(function(chunk)
+    return chunk[1]
+  end, require("iz.ui.inline").virt_lines(sent, 80)[1])
+  H.eq(table.concat(chunks), "  ┃ sent: three is a magic number")
+
+  api.nvim_feedkeys("I", "x", false)
+  H.eq(ws.session.data.comments[2].status, "ignored")
+  H.eq(sent.status, "open")
+end
+
+T["co-reviewer"]["the thread names the co-reviewer and sends with s"] = function()
+  local root = repo_with_suggestions()
+  local ws = open(root)
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
+  workspace.actions.open_thread()
+  local float = api.nvim_get_current_win()
+  H.eq(api.nvim_buf_get_lines(0, 0, -1, false), { "co-reviewer", "three is a magic number" })
+  H.eq(api.nvim_win_get_config(float).footer[1][1]:find("^ s send") ~= nil, true)
+  api.nvim_feedkeys("s", "x", false)
+  H.eq(api.nvim_win_is_valid(float), false)
+  H.eq(require("iz.session.comments").awaiting_agent(ws.session.data.comments[1]), true)
+end
+
 T["comments"]["anchors follow the code on refresh and get lost when it disappears"] = function()
   local root = H.repo({ ["a.txt"] = H.lines(5) })
   H.write(root, "a.txt", H.lines(5, { [3] = "three" }))

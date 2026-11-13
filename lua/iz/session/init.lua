@@ -5,7 +5,10 @@ local util = require("iz.util")
 
 local M = {}
 
-M.SCHEMA_VERSION = 1
+-- 2: messages can come from the Co-reviewer (`author = "coreviewer"`), a user
+-- message with an empty body means "sent as it is", and `summaries` holds the
+-- agent's per-file Summaries.
+M.SCHEMA_VERSION = 2
 
 ---@class iz.SessionData
 ---@field schema_version integer
@@ -17,6 +20,7 @@ M.SCHEMA_VERSION = 1
 ---@field comments table[]
 ---@field trash table[] Discard stack, newest last.
 ---@field brief? { id: string, hash: string } The Brief last written to `.iz/brief.md`.
+---@field summaries table<string, iz.Summary> By repository-relative path.
 
 ---@class iz.Session
 ---@field root string
@@ -50,6 +54,10 @@ function M.load(root, id)
   if not data then
     return nil
   end
+  -- Version 1 is a subset of version 2; it is written back as 2 on the next save.
+  if data.schema_version == 1 then
+    data.schema_version = M.SCHEMA_VERSION
+  end
   if data.schema_version ~= M.SCHEMA_VERSION then
     error(("session %s has schema version %s; this iz understands %d"):format(
       id,
@@ -60,6 +68,7 @@ function M.load(root, id)
   -- JSON turns empty tables into arrays; restore the shapes the code expects.
   data.comments = data.comments or {}
   data.trash = data.trash or {}
+  data.summaries = data.summaries or {}
   return { root = root, id = id, data = data }
 end
 
@@ -98,6 +107,7 @@ function M.create(root)
       base = base,
       comments = {},
       trash = {},
+      summaries = {},
     },
   }
   M.save(session)

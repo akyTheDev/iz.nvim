@@ -3,6 +3,9 @@ local M = {}
 M.defaults = {
   files_width = 42,
   panel_width = 56,
+  -- Rows of the strip above the diff that shows the agent's Summary of the
+  -- file (/iz-summary); 0 never shows it.
+  summary_height = 5,
   -- Moving through the file list shows the file under the cursor in the diff;
   -- `<CR>` still moves into it.
   preview_on_move = true,
@@ -48,6 +51,8 @@ M.defaults = {
       resolve = "r",
       ignore = "i",
       reopen = "o",
+      send = "s",
+      ignore_suggestions = "I",
       move = "m",
       close = "q",
       help = "?",

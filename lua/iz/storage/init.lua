@@ -20,6 +20,22 @@ function M.inbox_dir(root)
   return M.dir(root) .. "/inbox"
 end
 
+--- Whether an agent-supplied `path` names a file inside the repository and
+--- outside `.iz/`: relative, without `..`.
+---@param path string
+---@return boolean
+function M.is_repo_path(path)
+  if path == "" or path:sub(1, 1) == "/" then
+    return false
+  end
+  for part in path:gmatch("[^/]+") do
+    if part == ".." then
+      return false
+    end
+  end
+  return not (path == M.DIR or vim.startswith(path, M.DIR .. "/"))
+end
+
 ---@param path string
 ---@return string?
 function M.read_file(path)

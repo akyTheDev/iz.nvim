@@ -38,8 +38,20 @@ Feedback anchored to a line, a Hunk, a file, or the whole Session, made of a roo
 _Avoid_: note, annotation
 
 **Reply**:
-One message in a Comment's thread, written either by the user or by the agent.
+One message in a Comment's thread, written either by the user or by the agent. A Reply from the user with no text sends a Suggestion on as it is.
 _Avoid_: response, answer
+
+**Co-reviewer**:
+A second AI agent that reviews the Session's changes in a fresh context before the user does, and leaves Suggestions. It never edits code, never sees the agent's Replies, and never sends anything to the agent.
+_Avoid_: copilot, pre-reviewer, reviewer (the reviewer is the user)
+
+**Summary**:
+The agent's own short account of what it changed in one file and why, written on request for larger changes and shown above that file's diff. It describes intent, not the diff, and reads as outdated once the file changes after it was written. Never part of the Brief.
+_Avoid_: description, changelog, note
+
+**Suggestion**:
+An open Comment written by the Co-reviewer that the user has not sent yet. It stays out of the Brief. The user sends it (as it is, or with a Reply of their own), or ignores it; once sent it is a Comment like any other.
+_Avoid_: finding, proposal
 
 **Brief**:
 The compact, prompt-ready digest of every open Comment in the active Session whose latest message is the user's. The only input the agent receives from iz.

@@ -29,6 +29,12 @@ Status       open, resolved or ignored. Only you set it.
 Claim        What the agent's latest Reply says: addressed, declined or
              question. A Claim never closes a Comment.
 Brief        `.iz/brief.md`: the open Comments waiting for the agent.
+Co-reviewer  A second agent that reviews the changes before you and leaves
+             Suggestions. It never edits code or talks to the agent.
+Suggestion   A Co-reviewer Comment you haven't sent yet. It stays out of the
+             Brief until you send it.
+Summary      The agent's own account of what it changed in a file and why,
+             shown above that file's diff.
 
 ==============================================================================
 2. COMMANDS                                                      *iz-commands*
@@ -52,8 +58,8 @@ Brief        `.iz/brief.md`: the open Comments waiting for the agent.
     unnamed register when there is no clipboard).
 
 :IzInstallClaude[!]                                          *:IzInstallClaude*
-    Install the `/iz` skill and the Stop hook for Claude Code. With [!],
-    remove them. See |iz-agents|.
+    Install the `/iz`, `/iz-coreview` and `/iz-summary` skills and the Stop
+    hook for Claude Code. With [!], remove them. See |iz-agents|.
 
 ==============================================================================
 3. WORKSPACE AND KEYS                                                *iz-keys*
@@ -96,6 +102,8 @@ Panel ~
   <CR>          open the thread and show its code behind it
   a             reply
   r  i  o       resolve / ignore / reopen
+  s             send a co-reviewer Suggestion to the agent as it is
+  I             ignore every Suggestion you haven't sent
   m             move the comment to the cursor line of the diff
   q             close the panel
   ?             list these keys
@@ -104,6 +112,7 @@ Thread ~
 The whole conversation of one Comment in a float, opened with <CR> in the
 panel or <leader>ik on a commented line. The panel and the inline comments
 only show the start of each message.
+  s             send (Suggestions only)
   a             reply
   r  i  o       resolve / ignore / reopen
   q  <Esc>      close
@@ -137,6 +146,29 @@ iz moves those lines into the threads and deletes the file. The Stop hook
 writes `.iz/stop` when Claude finishes a turn; iz refreshes and reports what
 changed. Any other agent can take part through |:IzExport|.
 
+Co-reviewer                                                     *iz-coreview*
+`/iz-coreview [skill or focus]` starts a second agent in a fresh context. It
+reads the uncommitted changes and writes Suggestions to `.iz/coreview/`, one
+JSON line each: >json
+    {"file": "src/a.lua", "line": 12, "end_line": 14, "body": "..."}
+<
+Leave out `line` for a whole file, and `file` too for the whole change. iz
+turns valid lines into Suggestions when the workspace opens or refreshes, and
+moves files with invalid lines to `.iz/coreview/failed/`. Suggestions wait in
+the panel until you send (`s`, or `a` with a note) or ignore them (`i`, `I`);
+only then do they reach the Brief.
+
+Summaries                                                       *iz-summary*
+`/iz-summary [minimum changed lines]` asks the agent, in its own
+conversation, to explain why each larger file changed (20 lines by default).
+It writes `.iz/summaries/<stamp>.jsonl`, one JSON line per file: >json
+    {"file": "src/a.lua", "summary": "..."}
+<
+A file with a Summary shows it in a strip above both diff sides, labelled
+"agent says", or "outdated" once the file changed after the Summary was
+written. A newer Summary of the same file replaces the older one. Summaries
+never reach the Brief.
+
 ==============================================================================
 6. CONFIGURATION                                                   *iz-config*
 
@@ -144,6 +176,7 @@ changed. Any other agent can take part through |:IzExport|.
     require("iz").setup({
       files_width = 42,
       panel_width = 56,
+      summary_height = 5,
       preview_on_move = true,
       keymaps = {
         paste_image = "<C-v>",
@@ -166,6 +199,10 @@ IzStagedMark        the "staged" badge
 IzNewSinceApproval  lines changed after their hunk was staged
 IzComment           comment text
 IzClaim             the agent's claim
+IzSuggestion        the co-reviewer's name in the panel
+IzSummary           the agent's Summary above the diff
+IzSummaryOutdated   a Summary whose file changed since
+IzThreadUser IzThreadAgent IzThreadCoreviewer   who wrote a message (thread)
 IzPartial           partly approved files and lost comments
 IzUnstaged          files with nothing approved yet
 IzDirectory         directory headers in the file list

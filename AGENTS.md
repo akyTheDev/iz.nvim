@@ -50,8 +50,10 @@ lua/iz/
   ui/format.lua      labels shared by panel, inline and thread (location, "line changed")
   clipboard.lua      clipboard image -> PNG file
   brief.lua          renders .iz/brief.md, the agent's only input
-  inbox.lua          parses .iz/inbox/*.jsonl into agent Replies
-  claude.lua         installs/removes the /iz skill and the Stop hook
+  inbox.lua          parses .iz/inbox/*.jsonl into agent Replies; shared JSONL drain
+  coreview.lua       parses .iz/coreview/*.jsonl into Co-reviewer Suggestions
+  summary.lua        parses .iz/summaries/*.jsonl into per-file Summaries; outdated check
+  claude.lua         installs/removes the /iz, /iz-coreview and /iz-summary skills and the Stop hook
   signal.lua         watches .iz/stop (written by the Stop hook)
   lifecycle.lua      :IzDone and session history
   health.lua         :checkhealth iz
@@ -67,7 +69,7 @@ tests/               test_*.lua (mini.test) + helpers.lua
 - **The user's index changes only on an explicit stage or unstage.** Anything that needs a tree (snapshots, diffs) works on a temp index via `GIT_INDEX_FILE`, see `git/trees.lua`. A temp index must keep the original index's mtime, or git trusts stale stat data and misses same-size edits (racy git).
 - **Never edit the user's Claude Code config by hand-rolled string edits.** `claude.lua` parses `settings.json`, adds or removes only entries marked `# iz.nvim`, keeps a `.bak`, and refuses invalid JSON. Hook commands must exit 0 with no output: anything else changes Claude's behaviour.
 - **Async UI work must not race.** Anything that awaits and then replaces shared state (`W.view`, the file shown) runs inside `exclusive()` in `workspace.lua`. It is not re-entrant: call `show()` from inside it, never `exclusive()` again.
-- **One writer per file.** Neovim writes `session.json` (atomically, through `storage.write_json`); the agent writes only to `.iz/inbox/`. Keep it that way. A read-only Neovim re-reads `session.json` instead of trusting its copy, and reloads it when it takes the lock over. Only the lock owner consumes `.iz/stop`.
+- **One writer per file.** Neovim writes `session.json` (atomically, through `storage.write_json`); the agent writes only to `.iz/inbox/` and `.iz/summaries/`, and the Co-reviewer only to `.iz/coreview/`. Keep it that way. A read-only Neovim re-reads `session.json` instead of trusting its copy, and reloads it when it takes the lock over. Only the lock owner consumes `.iz/stop`.
 - **Ids come from `util.random_hex`**, not `math.random`, which starts from the same seed in every Neovim.
 - **Approval lives in the git index.** Staged means approved. Don't add a "reviewed" flag: it would drift from what the user actually commits.
 - **Refuse stale operations.** Hunk ops recompute the file and fail with `ops.STALE` rather than apply a patch to code the user hasn't seen.
@@ -76,13 +78,15 @@ tests/               test_*.lua (mini.test) + helpers.lua
 - **Something staged before a Session opens is part of its Base**, not an approval. Tests that need a Staged hunk must open the Session first, then stage.
 - **Status changes only through `comments.set_status`**, and only from user actions. Agent input goes through `comments.agent_reply`, which can't touch Status. A Claim is derived from the last message; never store it separately.
 - **The Brief is a token budget.** Only Comments waiting for the agent, grouped by file, one line each; snippets only for lost Anchors and deleted lines; from a thread only the agent's last note and the reviewer's latest message. Any change to its format needs a test in `test_brief.lua` that pins the exact text.
-- **Agent input is untrusted data.** Validate every inbox line (id exists, claim is one of three); never let it change Status, files, or anything outside the thread.
+- **Agent input is untrusted data.** Validate every inbox line (id exists, claim is one of three); never let it change Status, files, or anything outside the thread. The same goes for the Co-reviewer: its lines only add Suggestions, to files inside the repository and outside `.iz/`.
+- **A Suggestion reaches the agent only when the user sends it.** The Brief takes Comments whose last message is the user's; never relax that to let Co-reviewer messages through.
 - **Anchors match exactly or get lost.** No fuzzy matching: a lost Comment is visible and fixable, a misplaced one is not. Old-side (`side = "old"`) Comments point at Base lines and are never relocated.
 
 ## UI conventions
 
 - The right diff window is the user's real, editable file. Never map plain editing keys there (`s`, `u`, `x`, `c`...): diff-window keys use the `<leader>i` prefix; plain keys are fine only in iz's own read-only buffers. Remove buffer-local maps from real buffers when the workspace closes.
 - Don't change global options (`diffopt`, `fillchars`...). Window-local options are fine on iz's windows.
+- Text that belongs above a file's diff goes in a window of its own, like the Summary strip: virtual lines above line 1 hide inside folds and show on one diff side only.
 - Replace a scratch buffer by putting the new one into its window first. Wiping a buffer that a window still shows closes the window (see `place_scratch` in `diff/native.lua`). Match buffers by exact name; `bufnr()` also matches partially.
 - On close, clear iz namespaces from every buffer, not just the ones in iz windows: `:tabclose` can remove the windows first.
 - User commands take `bar = true` so they chain with `|`.

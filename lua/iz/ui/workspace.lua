@@ -6,6 +6,7 @@ local backend = require("iz.diff.backend")
 local brief = require("iz.brief")
 local comments = require("iz.session.comments")
 local config = require("iz.config")
+local coreview = require("iz.coreview")
 local editor = require("iz.ui.editor")
 local files_ui = require("iz.ui.files")
 local format = require("iz.ui.format")
@@ -20,6 +21,7 @@ local ops = require("iz.git.ops")
 local panel = require("iz.ui.panel")
 local session_mod = require("iz.session")
 local storage = require("iz.storage")
+local summary_mod = require("iz.summary")
 local thread = require("iz.ui.thread")
 local util = require("iz.util")
 
@@ -38,6 +40,7 @@ local M = {}
 ---@field path? string File shown in the diff.
 ---@field filter boolean Show only Unstaged hunks.
 ---@field panel { buf: integer, win?: integer, ids: table<integer, string>, manual?: boolean }
+---@field summary { buf: integer, win?: integer } The strip above the diff.
 ---@field mapped table<integer, boolean> Buffers that carry our diff keymaps.
 ---@field watchers uv.uv_fs_event_t[]
 ---@field augroup integer
@@ -142,6 +145,17 @@ local function draw_files()
   })
 end
 
+local fit_summary
+
+--- The two diff sides share their width evenly.
+local function equalize()
+  local left, right = W.wins.left, W.wins.right
+  if api.nvim_win_is_valid(left) and api.nvim_win_is_valid(right) then
+    local total = api.nvim_win_get_width(left) + api.nvim_win_get_width(right)
+    api.nvim_win_set_width(left, math.floor(total / 2))
+  end
+end
+
 local function sync_panel()
   local want = W.panel.manual
   if want == nil then
@@ -149,9 +163,10 @@ local function sync_panel()
   end
   local open = W.panel.win ~= nil and api.nvim_win_is_valid(W.panel.win)
   if want and not open then
+    -- Full height at the far right, beside the Summary strip as well.
     W.panel.win = api.nvim_open_win(W.panel.buf, false, {
       split = "right",
-      win = W.wins.right,
+      win = -1,
       width = config.options.panel_width,
     })
     vim.wo[W.panel.win].number = false
@@ -170,12 +185,8 @@ local function sync_panel()
     W.panel.win = nil
   end
   if want ~= open then
-    -- The panel takes its width from the right diff alone; share the rest evenly.
-    local left, right = W.wins.left, W.wins.right
-    if api.nvim_win_is_valid(left) and api.nvim_win_is_valid(right) then
-      local total = api.nvim_win_get_width(left) + api.nvim_win_get_width(right)
-      api.nvim_win_set_width(left, math.floor(total / 2))
-    end
+    equalize()
+    fit_summary()
   end
   if want then
     W.panel.ids = panel.draw(W.panel.buf, W.session)
@@ -194,12 +205,20 @@ local function draw_comments()
   end
 end
 
---- Moves agent replies from `.iz/inbox/` into the Session.
----@param quiet? boolean leave reporting to the caller
+--- Moves agent replies from `.iz/inbox/` and Co-reviewer Suggestions from
+--- `.iz/coreview/` into the Session.
+---@param quiet? boolean leave reporting the replies to the caller
 ---@return iz.IngestResult?
 local function ingest(quiet)
   if W.readonly then
     return nil
+  end
+  for _, source in ipairs({ coreview, summary_mod }) do
+    local res = source.ingest(W.session)
+    local msg = source.summary(res)
+    if msg then
+      notify(msg, #res.failed > 0 and vim.log.levels.WARN or vim.log.levels.INFO)
+    end
   end
   local result = inbox.ingest(W.session)
   local msg = inbox.summary(result)
@@ -231,6 +250,72 @@ end
 local map_diff_keys
 local suggest_done
 
+--- Sizes the Summary strip to its wrapped text, up to `summary_height` rows.
+--- Runs again whenever its width changes: the panel opening narrows it.
+function fit_summary()
+  local win = W.summary.win
+  if not (win and api.nvim_win_is_valid(win)) then
+    return
+  end
+  local width = math.max(api.nvim_win_get_width(win) - 2, 1) -- minus the sign column
+  local rows = 0
+  for _, l in ipairs(api.nvim_buf_get_lines(W.summary.buf, 0, -1, false)) do
+    rows = rows + math.max(1, math.ceil(vim.fn.strdisplaywidth(l) / width))
+  end
+  local height = math.min(rows, config.options.summary_height)
+  if api.nvim_win_get_height(win) ~= height then
+    api.nvim_win_set_height(win, height)
+  end
+end
+
+--- Shows the agent's Summary of the file in a strip above both diff sides,
+--- and removes the strip for a file without one. The strip is a window of
+--- its own: virtual lines above line 1 hide inside folds and push one diff
+--- side out of line with the other.
+local function draw_summary()
+  local max = config.options.summary_height
+  local s = max > 0 and W.path and summary_mod.get(W.session, W.path) or nil
+  local open = W.summary.win ~= nil and api.nvim_win_is_valid(W.summary.win)
+  if not s then
+    if open then
+      api.nvim_win_close(W.summary.win, true)
+      W.summary.win = nil
+      equalize()
+    end
+    return
+  end
+  local buf = W.summary.buf
+  vim.bo[buf].modifiable = true
+  api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(s.body, "\n"))
+  vim.bo[buf].modifiable = false
+  if not open then
+    W.summary.win = api.nvim_open_win(buf, false, {
+      split = "above",
+      win = W.wins.right,
+      height = 1,
+    })
+    -- Moving (not recreating) the left side under the strip keeps its diff state.
+    vim.fn.win_splitmove(W.wins.left, W.wins.right, { vertical = true })
+    local wo = vim.wo[W.summary.win]
+    -- The sign column pads the text, as in the thread view.
+    wo.number, wo.relativenumber, wo.signcolumn = false, false, "yes:1"
+    wo.wrap, wo.linebreak, wo.cursorline = true, true, false
+    wo.winfixheight = true
+    equalize()
+  end
+  local win = W.summary.win --[[@as integer]]
+  fit_summary()
+  api.nvim_buf_clear_namespace(buf, hl.ns, 0, -1)
+  api.nvim_buf_set_extmark(buf, hl.ns, 0, 0, {
+    end_row = api.nvim_buf_line_count(buf),
+    hl_group = s.outdated and "IzSummaryOutdated" or "IzSummary",
+    strict = false,
+  })
+  local label = s.outdated and "agent says · outdated: the file changed since" or "agent says"
+  local path = W.path:gsub("%%", "%%%%")
+  vim.wo[win].statusline = " " .. path .. " · " .. label
+end
+
 --- Async. Shows `path` in the diff windows.
 ---@param path? string
 local function show(path)
@@ -242,6 +327,7 @@ local function show(path)
     map_diff_keys(api.nvim_win_get_buf(W.wins.left))
     map_diff_keys(api.nvim_win_get_buf(W.wins.right))
   end
+  draw_summary()
   set_winbars()
 end
 
@@ -252,7 +338,9 @@ function suggest_done()
   for _, f in ipairs(W.view.files) do
     unstaged = unstaged + f.unstaged
   end
-  local waiting = vim.iter(W.session.data.comments):any(comments.awaiting_user)
+  local waiting = vim.iter(W.session.data.comments):any(function(c)
+    return comments.awaiting_user(c) or comments.suggested(c)
+  end)
   local looks_done = #W.view.files > 0 and unstaged == 0 and not waiting
   if looks_done and not W.suggested then
     notify("session looks done: everything is staged and nothing waits for you. Run :IzDone")
@@ -315,6 +403,7 @@ local function refresh_inner()
     -- Against the index the left side changes with every stage; reload it.
     show(keep)
   end
+  draw_summary()
   draw_comments()
   suggest_done()
 end
@@ -823,8 +912,22 @@ local function set_status(status)
 end
 
 ---@param c iz.Comment
+local function send(c)
+  if not writable() then
+    return
+  end
+  if not comments.suggested(c) then
+    notify("only an unsent co-reviewer suggestion can be sent", vim.log.levels.WARN)
+    return
+  end
+  comments.send(W.session, c)
+  draw_comments()
+end
+
+---@param c iz.Comment
 local function open_thread(c)
   thread.open(c, {
+    send = send,
     reply = reply,
     resolve = set_status("resolved"),
     ignore = set_status("ignored"),
@@ -884,6 +987,27 @@ M.actions.panel_reply = on_panel_comment(reply)
 M.actions.panel_resolve = on_panel_comment(set_status("resolved"))
 M.actions.panel_ignore = on_panel_comment(set_status("ignored"))
 M.actions.panel_reopen = on_panel_comment(set_status("open"))
+M.actions.panel_send = on_panel_comment(send)
+
+--- Ignores every Suggestion the user has not sent, in one go.
+function M.actions.ignore_suggestions()
+  if not writable() then
+    return
+  end
+  local n = 0
+  for _, c in ipairs(W.session.data.comments) do
+    if comments.suggested(c) then
+      comments.set_status(W.session, c, "ignored")
+      n = n + 1
+    end
+  end
+  if n == 0 then
+    notify("no unsent suggestions")
+    return
+  end
+  notify("ignored " .. util.plural(n, "suggestion"))
+  draw_comments()
+end
 
 function M.actions.done()
   if not writable() then
@@ -1005,6 +1129,8 @@ local function map_panel_keys()
   bufmap(buf, k.resolve, M.actions.panel_resolve, "resolve")
   bufmap(buf, k.ignore, M.actions.panel_ignore, "ignore")
   bufmap(buf, k.reopen, M.actions.panel_reopen, "reopen")
+  bufmap(buf, k.send, M.actions.panel_send, "send the suggestion to the agent")
+  bufmap(buf, k.ignore_suggestions, M.actions.ignore_suggestions, "ignore every unsent suggestion")
   bufmap(buf, k.move, M.actions.panel_move, "move to cursor line")
   bufmap(buf, k.close, M.actions.toggle_panel, "close panel")
   bufmap(buf, k.help, function()
@@ -1061,15 +1187,18 @@ local function watch_dir(dir, on_change)
   return handle
 end
 
---- Watches `.iz/inbox/` for agent replies; only the session's writer does this.
+--- Watches `.iz/inbox/` for agent replies, `.iz/coreview/` for Suggestions
+--- and `.iz/summaries/` for Summaries; only the session's writer does this.
 local function watch_inbox()
-  local dir = storage.inbox_dir(W.root)
-  vim.fn.mkdir(dir, "p")
-  table.insert(W.watchers, watch_dir(dir, function(name)
-    if name:match("%.jsonl$") then
-      M.schedule_refresh()
-    end
-  end))
+  local dirs = { storage.inbox_dir(W.root), coreview.dir(W.root), summary_mod.dir(W.root) }
+  for _, dir in ipairs(dirs) do
+    vim.fn.mkdir(dir, "p")
+    table.insert(W.watchers, watch_dir(dir, function(name)
+      if name:match("%.jsonl$") then
+        M.schedule_refresh()
+      end
+    end))
+  end
 end
 
 local opening = false
@@ -1127,6 +1256,7 @@ function M._open()
     line_paths = {},
     filter = false,
     panel = { buf = scratch("iz-panel", "iz://comments"), ids = {} },
+    summary = { buf = scratch("iz-summary", "iz://summary") },
     mapped = {},
     watchers = {},
     augroup = api.nvim_create_augroup("iz.workspace", { clear = true }),
@@ -1178,6 +1308,9 @@ function M._open()
     callback = function()
       -- Inline comments are cut to their window's width.
       local resized = vim.v.event.windows or {}
+      if W and W.summary.win and vim.tbl_contains(resized, W.summary.win) then
+        fit_summary()
+      end
       local ctx = W and diff_ctx()
       if
         ctx
@@ -1234,7 +1367,7 @@ function M.close()
       vim.cmd("only")
     end
   end
-  for _, buf in ipairs({ ws.files_buf, ws.panel.buf }) do
+  for _, buf in ipairs({ ws.files_buf, ws.panel.buf, ws.summary.buf }) do
     if api.nvim_buf_is_valid(buf) then
       api.nvim_buf_delete(buf, { force = true })
     end

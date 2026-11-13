@@ -43,10 +43,23 @@ function M.headline(c)
   return table.concat(parts, " · ")
 end
 
+local WHO = { user = "you", agent = "agent", coreviewer = "co-reviewer" }
+
 ---@param m iz.Message
 ---@return string
 function M.who(m)
-  return m.author == "agent" and "agent" or "you"
+  return WHO[m.author] or "you"
+end
+
+--- What a message says, in the words shown to the user: an empty message
+--- from the user sent a Suggestion on as it is.
+---@param m iz.Message
+---@return string
+function M.body(m)
+  if m.author == "user" and m.body == "" then
+    return "sent to the agent"
+  end
+  return m.body
 end
 
 ---@param text string

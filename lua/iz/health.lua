@@ -20,14 +20,14 @@ function M.check()
 
   local status = require("iz.claude").status()
   if not status.skill then
-    h.warn("Claude Code skill not installed", { "Run :IzInstallClaude" })
+    h.warn("Claude Code skills (/iz, /iz-coreview) not all installed", { "Run :IzInstallClaude" })
   elseif not status.skill_current then
     h.warn(
-      "Claude Code skill is outdated or edited by hand",
-      { "Run :IzInstallClaude to update it" }
+      "a Claude Code skill is outdated or edited by hand",
+      { "Run :IzInstallClaude to update them" }
     )
   else
-    h.ok("Claude Code skill installed")
+    h.ok("Claude Code skills installed")
   end
   if status.hook then
     h.ok("Claude Code Stop hook installed")

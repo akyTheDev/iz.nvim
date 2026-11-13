@@ -15,11 +15,16 @@ function M.virt_lines(c, width)
   local last = comments.last(c)
   -- A Claim already says the agent spoke.
   local label = { comments.claim(c) or format.who(last) }
+  local text = last.body
+  if last.author == "user" and last.body == "" and #c.thread > 1 then
+    -- Sent as it is: what was sent says more than who sent it.
+    label[1], text = "sent", c.thread[#c.thread - 1].body
+  end
   label[#label + 1] = format.anchor_state(c)
   local chunks = {
     { "  ┃ ", "IzComment" },
     { table.concat(label, " · ") .. ": ", "IzMuted" },
-    { format.one_line(last.body), "IzComment" },
+    { format.one_line(text), "IzComment" },
   }
   -- Virtual lines don't wrap: cut to the window, label included.
   local room = width

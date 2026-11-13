@@ -65,9 +65,12 @@ local function entry(c)
     if last_agent then
       out[#out + 1] = "  agent: " .. indent(last_agent.body, "    ")
     end
-    -- The latest reviewer message, when it is not the root itself.
+    -- The latest reviewer message, when it is not the root itself. An empty
+    -- one only sent a Suggestion on as it is: nothing to add.
     local last = comments.last(c)
-    out[#out + 1] = "  reviewer: " .. indent(last.body, "    ")
+    if last.body ~= "" then
+      out[#out + 1] = "  reviewer: " .. indent(last.body, "    ")
+    end
   end
   for _, path in ipairs(c.attachments or {}) do
     out[#out + 1] = "  image: " .. path
