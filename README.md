@@ -137,6 +137,7 @@ require("iz").setup({
   panel_width = 56,
   summary_height = 5, -- rows of the agent's summary above the diff; 0 hides it
   preview_on_move = true, -- the diff follows the cursor in the file list
+  thread = { width = 0.6, height = 0.6 }, -- thread float, as a share of the screen
   keymaps = {
     paste_image = "<C-v>",
     files = { open = "<CR>", stage = "s", unstage = "u", discard = "x", undo_discard = "U",

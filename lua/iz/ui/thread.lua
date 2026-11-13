@@ -71,16 +71,18 @@ function M.open(c, actions)
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].filetype = "markdown"
 
-  -- Wide enough to read prose, with room to grow for long threads.
+  -- A share of the screen, so it reads the same on a laptop and a wide
+  -- monitor; never narrower than a line of prose unless the screen is.
+  local size = config.options.thread
   local max_width = math.max(1, vim.o.columns - 6)
-  local width = math.min(max_width, math.max(72, math.floor(vim.o.columns * 0.6)), 110)
+  local width = math.min(max_width, math.max(72, math.floor(vim.o.columns * size.width)))
   local text_width = width - 2 -- the sign column pads the text
   local rows = 0
   for _, l in ipairs(lines) do
     rows = rows + math.max(1, math.ceil(vim.fn.strdisplaywidth(l) / text_width))
   end
   local max_height = math.max(1, vim.o.lines - 8)
-  local height = math.min(max_height, math.max(rows + 1, 12))
+  local height = math.min(max_height, math.max(rows + 1, math.floor(vim.o.lines * size.height)))
 
   local k = config.options.keymaps.panel
   local hints = {}

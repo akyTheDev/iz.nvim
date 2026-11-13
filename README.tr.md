@@ -137,6 +137,7 @@ require("iz").setup({
   panel_width = 56,
   summary_height = 5, -- diff'in üstündeki agent özetinin satır sayısı; 0 gizler
   preview_on_move = true, -- diff, dosya listesindeki imleci takip eder
+  thread = { width = 0.6, height = 0.6 }, -- thread penceresi, ekranın oranı olarak
   keymaps = {
     paste_image = "<C-v>",
     files = { open = "<CR>", stage = "s", unstage = "u", discard = "x", undo_discard = "U",

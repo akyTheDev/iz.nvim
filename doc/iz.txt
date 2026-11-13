@@ -178,6 +178,7 @@ never reach the Brief.
       panel_width = 56,
       summary_height = 5,
       preview_on_move = true,
+      thread = { width = 0.6, height = 0.6 },
       keymaps = {
         paste_image = "<C-v>",
         files = { ... },

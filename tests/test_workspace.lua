@@ -463,7 +463,7 @@ T["comments"]["the thread float is roomy and keeps markdown rendered under the c
   api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
   workspace.actions.open_thread()
   local float = api.nvim_get_current_win()
-  H.eq(api.nvim_win_get_height(float) >= math.min(12, vim.o.lines - 8), true)
+  H.eq(api.nvim_win_get_height(float), math.floor(vim.o.lines * 0.6))
   H.eq(api.nvim_win_get_width(float) >= math.min(72, vim.o.columns - 6), true)
   H.eq(vim.wo[float].concealcursor, "nc")
   vim.cmd("close")
@@ -611,6 +611,26 @@ T["co-reviewer"]["the thread names the co-reviewer and sends with s"] = function
   api.nvim_feedkeys("s", "x", false)
   H.eq(api.nvim_win_is_valid(float), false)
   H.eq(require("iz.session.comments").awaiting_agent(ws.session.data.comments[1]), true)
+end
+
+T["comments"]["the thread float scales with a wide screen"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(5) })
+  H.write(root, "a.txt", H.lines(5, { [3] = "three" }))
+  local ws = open(root)
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
+  workspace.actions.comment_line()
+  type_and_save("short")
+  local columns, lines = vim.o.columns, vim.o.lines
+  vim.o.columns, vim.o.lines = 250, 80
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
+  workspace.actions.open_thread()
+  local float = api.nvim_get_current_win()
+  local size = { api.nvim_win_get_width(float), api.nvim_win_get_height(float) }
+  vim.cmd("close")
+  vim.o.columns, vim.o.lines = columns, lines
+  H.eq(size, { 150, 48 })
 end
 
 T["comments"]["anchors follow the code on refresh and get lost when it disappears"] = function()
