@@ -17,6 +17,10 @@ local groups = {
   IzClaim = { link = "DiagnosticHint" },
   IzThreadUser = { link = "Title" },
   IzThreadAgent = { link = "Special" },
+  IzThreadCoreviewer = { link = "Constant" },
+  IzSuggestion = { link = "DiagnosticHint" },
+  IzSummary = { link = "Normal" },
+  IzSummaryOutdated = { link = "Comment" },
 }
 
 function M.setup()

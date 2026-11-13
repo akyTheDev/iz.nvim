@@ -40,7 +40,7 @@ Ardından bir kez:
 :IzInstallClaude
 ```
 
-Bu komut `/iz` skill'ini `~/.claude/skills/iz/SKILL.md` dosyasına yazar ve `~/.claude/settings.json` dosyasına bir Stop hook'u ekler; böylece iz, agent'ın turunu ne zaman bitirdiğini bilir. Hook, `.iz/` olmayan projelerde hiçbir şey yapmaz. `settings.json`'ın yanına bir yedek yazılır ve `:IzInstallClaude!` ikisini de geri kaldırır. Kurulumu `:checkhealth iz` ile kontrol edebilirsin.
+Bu komut `/iz`, `/iz-coreview` ve `/iz-summary` skill'lerini `~/.claude/skills/` altına yazar ve `~/.claude/settings.json` dosyasına bir Stop hook'u ekler; böylece iz, agent'ın turunu ne zaman bitirdiğini bilir. Hook, `.iz/` olmayan projelerde hiçbir şey yapmaz. `settings.json`'ın yanına bir yedek yazılır ve `:IzInstallClaude!` ikisini de geri kaldırır. Kurulumu `:checkhealth iz` ile kontrol edebilirsin.
 
 ## Döngü
 
@@ -53,6 +53,31 @@ Bu komut `/iz` skill'ini `~/.claude/skills/iz/SKILL.md` dosyasına yazar ve `~/.
 7. Görev bitince `:IzDone`, ardından bir sonrakine `:Iz` ile başla.
 
 Başka bir agent mı kullanıyorsun? `:IzExport`, inbox talimatlarıyla birlikte Brief'i panoya kopyalar. Dosya yazabilen her agent cevap verebilir.
+
+## Co-reviewer
+
+Büyük işlerde ilk bakışı ikinci bir agent'a bırak. Agent işini bitirince Claude Code'da `/iz-coreview` çalıştır: co-reviewer temiz bir context'te başlar, commit'lenmemiş değişiklikleri okur ve bulgularını `.iz/coreview/` altına yazar. Koda dokunmaz, agent'la konuşmaz.
+
+Komuttan sonra kendi review skill'ini ya da neye odaklanacağını yazarsan co-reviewer varsayılanı (hatalar, eksik durumlar ve riskler; stil yok) yerine onu izler:
+
+```
+/iz-coreview code-review
+/iz-coreview check error handling in the new endpoints
+```
+
+`:Iz`'i aç: bulgular panelde "Suggested by the co-reviewer" başlığı altında ve diff'te satır içinde durur. Sen karar verene kadar hiçbiri agent'a gitmez:
+
+- `s` öneriyi olduğu gibi gönderir (thread'e "sent to the agent" düşer).
+- `a` kendi notunla gönderir.
+- `i` yok sayar; `I` göndermediğin bütün önerileri yok sayar.
+
+Kendi yorumlarını da ekle, sonra her zamanki gibi `/iz` çalıştır: agent gönderdiğin her şeyi tek Brief'te alır, her thread'de co-reviewer, sen ve agent bir arada görünür.
+
+## Özetler
+
+Diff neyin değiştiğini gösterir; nedenini sadece agent bilir. Büyük bir işten sonra aynı Claude Code konuşmasında `/iz-summary` çalıştır: agent en az 20 satırı değişen her dosya için bir ile üç cümlelik bir özeti `.iz/summaries/` altına yazar (`/iz-summary 50` eşiği yükseltir).
+
+`:Iz`'de özeti olan dosyanın diff'inin iki tarafının üstünde "agent says" etiketli bir şerit çıkar. Bu agent'ın iddiasıdır, hüküm değil: kodu yine de oku. Özetten sonra dosya değişirse şerit "outdated" der. Özeti olmayan dosyada şerit çıkmaz. Hiç göstermemek için `summary_height = 0`.
 
 ## Tuşlar
 
@@ -77,8 +102,11 @@ Başka bir agent mı kullanıyorsun? `:IzExport`, inbox talimatlarıyla birlikte
 | Panel | `<CR>` | thread'i (konuşmanın tamamı) aç ve kodunu göster |
 | | `a` | cevap yaz |
 | | `r` / `i` / `o` | çözüldü / yok say / yeniden aç |
+| | `s` | co-reviewer önerisini agent'a olduğu gibi gönder |
+| | `I` | gönderilmemiş bütün co-reviewer önerilerini yok say |
 | | `m` | yorumu diff'teki imlecin olduğu satıra taşı |
 | Thread | `a` / `r` / `i` / `o` | cevap yaz / çözüldü / yok say / yeniden aç |
+| | `s` | gönder (co-reviewer önerileri) |
 | | `q` / `<Esc>` | kapat |
 | Yorum editörü | `<C-s>` ya da `:w` | kaydet |
 | | `q` | vazgeç |
@@ -87,6 +115,8 @@ Başka bir agent mı kullanıyorsun? `:IzExport`, inbox talimatlarıyla birlikte
 Dosya listesinin başlığı ilerlemeyi gösterir: stage'lenen hunk sayısı / toplam ve açık yorumlar. Listede imleçle gezinirken her dosya diff'te görünür, sen listede kalırsın; `<CR>` dosyanın içine geçer. Kapatmak için `preview_on_move = false`.
 
 Diff penceresindeki tuşlar `<leader>i` ile başlar, çünkü sağ taraf senin gerçek dosyandır ve düzenlenebilir kalır. Kendi düzenlemelerin de agent'ınkiler gibi Unstaged olarak görünür. `<leader>if`, `ip`, `il` ve `iq` dosya listesinde ve panelde de çalışır.
+
+Review sırasında kod okumak: diff penceresinden `gd`, `:edit` ya da bir dosya seçici, dosyayı review'un hemen yanındaki bir okuma sekmesinde, imleç hedefteyken açar. Diff olduğu gibi kalır; `gT` ya da `:Iz` seni geri götürür. Sonraki atlamalar aynı okuma sekmesini kullanır.
 
 ## Komutlar
 
@@ -97,7 +127,7 @@ Diff penceresindeki tuşlar `<leader>i` ile başlar, çünkü sağ taraf senin g
 | `:Iz history` | geçmiş Session'ları ve thread'lerini gösterir |
 | `:IzDone` | Session'ı kapatır; açık yorumlar onayından sonra yok sayılır |
 | `:IzExport` | Brief'i herhangi bir agent için kopyalar |
-| `:IzInstallClaude[!]` | Claude Code skill'ini ve hook'unu kurar (ya da kaldırır) |
+| `:IzInstallClaude[!]` | Claude Code skill'lerini ve hook'unu kurar (ya da kaldırır) |
 
 ## Ayarlar
 
@@ -107,7 +137,9 @@ Varsayılanlar, hepsi isteğe bağlı:
 require("iz").setup({
   files_width = 42,
   panel_width = 56,
+  summary_height = 5, -- diff'in üstündeki agent özetinin satır sayısı; 0 gizler
   preview_on_move = true, -- diff, dosya listesindeki imleci takip eder
+  thread = { width = 0.6, height = 0.6 }, -- thread penceresi, ekranın oranı olarak
   keymaps = {
     paste_image = "<C-v>",
     files = { open = "<CR>", stage = "s", unstage = "u", discard = "x", undo_discard = "U",
@@ -119,7 +151,7 @@ require("iz").setup({
              toggle_panel = "<leader>ip", focus_files = "<leader>il",
              next_hunk = "]h", prev_hunk = "[h", close = "<leader>iq", help = "<leader>i?" },
     panel = { jump = "<CR>", reply = "a", resolve = "r", ignore = "i", reopen = "o",
-              move = "m", close = "q", help = "?" },
+              send = "s", ignore_suggestions = "I", move = "m", close = "q", help = "?" },
   },
 })
 ```
@@ -134,6 +166,8 @@ Bir tuşu kapatmak için `""` ver. Vurgu grupları (`IzStaged`, `IzNewSinceAppro
 .iz/
 ├── brief.md        agent'ın okuduğu dosya (Neovim yazar)
 ├── inbox/          agent cevapları, her Brief için bir dosya (agent yazar)
+├── coreview/       co-reviewer önerileri (co-reviewer yazar)
+├── summaries/      dosya özetleri (agent yazar)
 ├── current         aktif Session'ın id'si
 └── sessions/<id>/  session.json, atılan hunk'lar (trash/), ekran görüntüleri (assets/)
 ```

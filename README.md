@@ -40,7 +40,7 @@ Then, once:
 :IzInstallClaude
 ```
 
-This writes the `/iz` skill to `~/.claude/skills/iz/SKILL.md` and adds a Stop hook to `~/.claude/settings.json`, so iz knows when the agent finishes a turn. The hook does nothing in projects without `.iz/`. A backup is written next to `settings.json`, and `:IzInstallClaude!` removes both again. Check the setup with `:checkhealth iz`.
+This writes the `/iz`, `/iz-coreview` and `/iz-summary` skills to `~/.claude/skills/` and adds a Stop hook to `~/.claude/settings.json`, so iz knows when the agent finishes a turn. The hook does nothing in projects without `.iz/`. A backup is written next to `settings.json`, and `:IzInstallClaude!` removes both again. Check the setup with `:checkhealth iz`.
 
 ## The loop
 
@@ -53,6 +53,31 @@ This writes the `/iz` skill to `~/.claude/skills/iz/SKILL.md` and adds a Stop ho
 7. `:IzDone` when the task is finished, then start the next one with `:Iz`.
 
 Using another agent? `:IzExport` copies the Brief, inbox instructions included, to the clipboard. Any agent that can write a file can answer.
+
+## Co-reviewer
+
+For bigger tasks, let a second agent take the first look. Run `/iz-coreview` in Claude Code after the agent finishes: a co-reviewer starts in a fresh context, reads the uncommitted changes and writes its findings to `.iz/coreview/`. It doesn't edit code and doesn't talk to the agent.
+
+Name your own review skill or a focus after the command, and the co-reviewer follows it instead of its default (bugs, missing cases and risks, no style):
+
+```
+/iz-coreview code-review
+/iz-coreview check error handling in the new endpoints
+```
+
+Open `:Iz` and the findings are in the panel under "Suggested by the co-reviewer", and inline in the diff. Nothing reaches the agent until you decide:
+
+- `s` sends a suggestion as it is (the thread records "sent to the agent").
+- `a` sends it with a note of your own.
+- `i` ignores it; `I` ignores every suggestion you haven't sent.
+
+Add your own comments too, then run `/iz` as usual: the agent gets everything you sent in one Brief, and each thread shows the co-reviewer, you and the agent together.
+
+## Summaries
+
+The diff shows what changed; only the agent knows why. After a larger task, run `/iz-summary` in the same Claude Code conversation: the agent writes one to three sentences for each file with at least 20 changed lines (`/iz-summary 50` raises the bar) to `.iz/summaries/`.
+
+In `:Iz`, a file with a summary gets a strip above both sides of its diff, marked "agent says". It's the agent's claim, not a verdict: read the code anyway. When the file changes after the summary was written, the strip says "outdated". Files without a summary get no strip. Set `summary_height = 0` to never show it.
 
 ## Keys
 
@@ -77,8 +102,11 @@ Using another agent? `:IzExport` copies the Brief, inbox instructions included, 
 | Panel | `<CR>` | open the thread (whole conversation) and show its code |
 | | `a` | reply |
 | | `r` / `i` / `o` | resolve / ignore / reopen |
+| | `s` | send a co-reviewer suggestion to the agent as it is |
+| | `I` | ignore every unsent co-reviewer suggestion |
 | | `m` | move a comment to the cursor line in the diff |
 | Thread | `a` / `r` / `i` / `o` | reply / resolve / ignore / reopen |
+| | `s` | send (co-reviewer suggestions) |
 | | `q` / `<Esc>` | close |
 | Comment editor | `<C-s>` or `:w` | save |
 | | `q` | cancel |
@@ -87,6 +115,8 @@ Using another agent? `:IzExport` copies the Brief, inbox instructions included, 
 The file list's title keeps score: hunks staged out of all, and open comments. Moving the cursor through the list shows each file in the diff while you stay in the list; `<CR>` moves into it. Turn this off with `preview_on_move = false`.
 
 Diff-window keys use `<leader>i` because the right side is your real file and stays editable. Your own edits show up as Unstaged like the agent's. `<leader>if`, `ip`, `il` and `iq` also work in the file list and the panel.
+
+Reading code while reviewing: `gd`, `:edit` or a file picker from a diff window opens the file in a reading tab, right after the review, with the cursor on the target. The diff stays as it was; `gT` or `:Iz` takes you back. Later jumps reuse the same reading tab.
 
 ## Commands
 
@@ -97,7 +127,7 @@ Diff-window keys use `<leader>i` because the right side is your real file and st
 | `:Iz history` | browse past Sessions and their threads |
 | `:IzDone` | close the Session; open comments are ignored after you confirm |
 | `:IzExport` | copy the Brief for any agent |
-| `:IzInstallClaude[!]` | install (or remove) the Claude Code skill and hook |
+| `:IzInstallClaude[!]` | install (or remove) the Claude Code skills and hook |
 
 ## Configuration
 
@@ -107,7 +137,9 @@ Defaults, all optional:
 require("iz").setup({
   files_width = 42,
   panel_width = 56,
+  summary_height = 5, -- rows of the agent's summary above the diff; 0 hides it
   preview_on_move = true, -- the diff follows the cursor in the file list
+  thread = { width = 0.6, height = 0.6 }, -- thread float, as a share of the screen
   keymaps = {
     paste_image = "<C-v>",
     files = { open = "<CR>", stage = "s", unstage = "u", discard = "x", undo_discard = "U",
@@ -119,7 +151,7 @@ require("iz").setup({
              toggle_panel = "<leader>ip", focus_files = "<leader>il",
              next_hunk = "]h", prev_hunk = "[h", close = "<leader>iq", help = "<leader>i?" },
     panel = { jump = "<CR>", reply = "a", resolve = "r", ignore = "i", reopen = "o",
-              move = "m", close = "q", help = "?" },
+              send = "s", ignore_suggestions = "I", move = "m", close = "q", help = "?" },
   },
 })
 ```
@@ -134,6 +166,8 @@ Set a key to `""` to disable it. Highlight groups (`IzStaged`, `IzNewSinceApprov
 .iz/
 ├── brief.md        what the agent reads (written by Neovim)
 ├── inbox/          agent replies, one file per Brief (written by the agent)
+├── coreview/       co-reviewer suggestions (written by the co-reviewer)
+├── summaries/      per-file summaries (written by the agent)
 ├── current         id of the active Session
 └── sessions/<id>/  session.json, discarded hunks (trash/), screenshots (assets/)
 ```

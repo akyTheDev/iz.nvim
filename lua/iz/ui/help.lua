@@ -39,6 +39,8 @@ local SECTIONS = {
     { "resolve", "resolve" },
     { "ignore", "ignore" },
     { "reopen", "reopen" },
+    { "send", "send a co-reviewer suggestion to the agent as it is" },
+    { "ignore_suggestions", "ignore every unsent co-reviewer suggestion" },
     { "move", "move the comment to the diff's cursor line" },
     { "close", "close the panel" },
   },

@@ -14,7 +14,9 @@ T["installs the skill and the hook, and is idempotent"] = function()
   local dir = temp_dir()
   local report = claude.install({ dir = dir })
   H.eq(report[1]:match("^skill installed"), "skill installed")
-  H.eq(report[2]:match("^Stop hook added"), "Stop hook added")
+  H.eq(report[2]:match("^skill installed"), "skill installed")
+  H.eq(report[3]:match("^skill installed"), "skill installed")
+  H.eq(report[4]:match("^Stop hook added"), "Stop hook added")
 
   local skill = storage.read_file(dir .. "/skills/iz/SKILL.md")
   H.eq(skill:find("!`cat .iz/brief.md`", 1, true) ~= nil, true)
@@ -23,7 +25,9 @@ T["installs the skill and the hook, and is idempotent"] = function()
 
   local again = claude.install({ dir = dir })
   H.eq(again[1]:match("^skill unchanged"), "skill unchanged")
-  H.eq(again[2]:match("^Stop hook unchanged"), "Stop hook unchanged")
+  H.eq(again[2]:match("^skill unchanged"), "skill unchanged")
+  H.eq(again[3]:match("^skill unchanged"), "skill unchanged")
+  H.eq(again[4]:match("^Stop hook unchanged"), "Stop hook unchanged")
   H.eq(#storage.read_json(dir .. "/settings.json").hooks.Stop, 1)
   H.eq(claude.status(dir), { skill = true, skill_current = true, hook = true })
 end
@@ -51,6 +55,45 @@ T["keeps every other setting and hook"] = function()
   H.eq(s.hooks.Stop, { { hooks = { { type = "command", command = "say done" } } } })
   H.eq(s.hooks.PreToolUse[1].hooks[1].command, "audit")
   H.eq(vim.uv.fs_stat(dir .. "/skills/iz"), nil)
+  H.eq(vim.uv.fs_stat(dir .. "/skills/iz-coreview"), nil)
+  H.eq(vim.uv.fs_stat(dir .. "/skills/iz-summary"), nil)
+end
+
+T["the summary skill runs in the agent's own conversation, only when asked"] = function()
+  local dir = temp_dir()
+  claude.install({ dir = dir })
+  local skill = storage.read_file(dir .. "/skills/iz-summary/SKILL.md")
+  local front = vim.split(skill:match("^%-%-%-\n(.-)\n%-%-%-\n"), "\n")
+  H.eq(vim.tbl_contains(front, "name: iz-summary"), true)
+  H.eq(vim.tbl_contains(front, "disable-model-invocation: true"), true)
+  -- Only the agent that wrote the code knows why: no fresh context.
+  H.eq(skill:find("context: fork", 1, true), nil)
+  for _, injected in ipairs({ "!`git diff --numstat`", " !`date +%Y%m%d-%H%M%S`" }) do
+    H.eq(skill:find(injected, 1, true) ~= nil, true)
+  end
+  H.eq(skill:find(".iz/summaries/", 1, true) ~= nil, true)
+end
+
+T["the co-reviewer skill runs in its own context, only when asked"] = function()
+  local dir = temp_dir()
+  claude.install({ dir = dir })
+  local skill = storage.read_file(dir .. "/skills/iz-coreview/SKILL.md")
+  local front = skill:match("^%-%-%-\n(.-)\n%-%-%-\n")
+  for _, field in ipairs({
+    "name: iz-coreview",
+    "context: fork",
+    "background: false",
+    "disable-model-invocation: true",
+  }) do
+    H.eq(vim.tbl_contains(vim.split(front, "\n"), field), true)
+  end
+  -- Shell injection only runs after whitespace or at the start of a line.
+  H.eq(skill:find(" !`date +%Y%m%d-%H%M%S`", 1, true) ~= nil, true)
+  H.eq(skill:find(".iz/coreview/", 1, true) ~= nil, true)
+
+  -- A missing co-reviewer skill shows up in :checkhealth.
+  vim.fn.delete(dir .. "/skills/iz-coreview", "rf")
+  H.eq(claude.status(dir).skill, false)
 end
 
 T["asks before replacing a hand-edited skill"] = function()

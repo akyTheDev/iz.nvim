@@ -111,6 +111,83 @@ T["moving through the file list shows the file under the cursor, focus stays"] =
   H.eq(api.nvim_win_get_cursor(ws.wins.right)[1], 20)
 end
 
+T["reading tab"] = MiniTest.new_set()
+
+--- Jumps the way `gd` does: the LSP client puts the target in the current window.
+---@param path string
+---@param line integer 1-based
+local function lsp_jump(path, line)
+  local pos = { line = line - 1, character = 0 }
+  local location = { uri = vim.uri_from_fname(path), range = { start = pos, ["end"] = pos } }
+  vim.lsp.util.show_document(location, "utf-8", { focus = true })
+end
+
+local function close_reading_tab(ws)
+  local reading = api.nvim_get_current_tabpage()
+  api.nvim_set_current_tabpage(ws.tab)
+  if reading ~= ws.tab and api.nvim_tabpage_is_valid(reading) then
+    vim.cmd(api.nvim_tabpage_get_number(reading) .. "tabclose")
+  end
+end
+
+T["reading tab"]["a jump out of the diff opens in the reading tab and the diff stays"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(10), ["lib.txt"] = H.lines(20) })
+  H.write(root, "a.txt", H.lines(10, { [3] = "three" }))
+  local ws = open(root)
+  local diff_buf = api.nvim_win_get_buf(ws.wins.right)
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
+
+  lsp_jump(root .. "/lib.txt", 12)
+  H.eq(vim.wait(2000, function()
+    return api.nvim_get_current_tabpage() ~= ws.tab
+  end, 10), true)
+  -- Reading: the target, at the definition, without the diff's options.
+  H.eq(api.nvim_buf_get_name(0), root .. "/lib.txt")
+  H.eq(api.nvim_win_get_cursor(0)[1], 12)
+  H.eq({ vim.wo.diff, vim.wo.scrollbind, vim.wo.winbar }, { false, false, "" })
+  -- Reviewing: untouched.
+  H.eq(api.nvim_win_get_buf(ws.wins.right), diff_buf)
+  H.eq(vim.wo[ws.wins.right].diff, true)
+  H.eq(api.nvim_win_get_cursor(ws.wins.right)[1], 3)
+
+  -- The next jump reuses the reading tab.
+  local tabs = #api.nvim_list_tabpages()
+  api.nvim_set_current_tabpage(ws.tab)
+  api.nvim_set_current_win(ws.wins.right)
+  vim.cmd("edit " .. root .. "/lib.txt")
+  H.eq(vim.wait(2000, function()
+    return api.nvim_get_current_tabpage() ~= ws.tab
+  end, 10), true)
+  H.eq(#api.nvim_list_tabpages(), tabs)
+  H.eq(api.nvim_win_get_buf(ws.wins.right), diff_buf)
+  close_reading_tab(ws)
+end
+
+T["reading tab"]["the diff comes back and stays clean if something slipped into it"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(10), ["lib.txt"] = H.lines(5) })
+  H.write(root, "a.txt", H.lines(10, { [3] = "three" }))
+  local ws = open(root)
+  local diff_buf = api.nvim_win_get_buf(ws.wins.right)
+  -- Without autocommands nothing moves it to the reading tab.
+  api.nvim_set_current_win(ws.wins.right)
+  vim.cmd("noautocmd edit " .. root .. "/lib.txt")
+  local lib = api.nvim_get_current_buf()
+
+  workspace.refresh()
+  wait()
+  -- A refresh redraws the diff instead of marking the stray buffer.
+  H.eq(api.nvim_buf_get_extmarks(lib, hl.ns, 0, -1, {}), {})
+  H.eq(api.nvim_win_get_buf(ws.wins.right), diff_buf)
+
+  vim.cmd("noautocmd edit " .. root .. "/lib.txt")
+  api.nvim_set_current_win(ws.wins.files)
+  api.nvim_win_set_cursor(ws.wins.files, { 1, 0 })
+  workspace.actions.open_under_cursor()
+  wait()
+  H.eq(api.nvim_win_get_buf(ws.wins.right), diff_buf)
+end
+
 T["staging from the diff marks the hunk and updates the list"] = function()
   local root = H.repo({ ["a.txt"] = H.lines(20) })
   H.write(root, "a.txt", H.lines(20, { [2] = "two", [15] = "fifteen" }))
@@ -361,6 +438,57 @@ T["comments"]["an inline comment fits its window, label included"] = function()
   H.eq(vim.fn.strcharpart(text, 39), "…")
 end
 
+T["comments"]["an inline comment's filler goes where the other diff side lines up"] = function()
+  local mirror = require("iz.ui.inline").mirror_line
+  -- Base 1..40 against: 3 lines inserted after 5, line 20 now two lines,
+  -- lines 30-31 deleted.
+  local hunks = {
+    { old_start = 5, old_count = 0, new_start = 6, new_count = 3 },
+    { old_start = 20, old_count = 1, new_start = 23, new_count = 2 },
+    { old_start = 30, old_count = 2, new_start = 33, new_count = 0 },
+  }
+  local cases = {
+    { "new", 2, 2 }, -- before every hunk
+    { "new", 7, 5 }, -- inside an insertion: under the line before it
+    { "new", 15, 12 }, -- after the insertion
+    { "new", 23, 20 }, -- paired line of a changed hunk
+    { "new", 24, 20 }, -- past the shorter side: its last line
+    { "new", 33, 29 }, -- right above the deletion
+    { "new", 40, 38 }, -- after everything
+    { "old", 30, 33 }, -- a deleted line: under the line before the gap
+    { "old", 38, 40 },
+  }
+  for _, case in ipairs(cases) do
+    H.eq({ case[1], case[2], mirror(hunks, case[1], case[2]) }, case)
+  end
+  -- Two lines grown to four: past the second, under the shorter side's last line.
+  local grown = { { old_start = 10, old_count = 2, new_start = 10, new_count = 4 } }
+  H.eq(mirror(grown, "new", 13), 11)
+  -- An insertion at the very top: the filler goes above the first line.
+  H.eq(mirror({ { old_start = 0, old_count = 0, new_start = 1, new_count = 2 } }, "new", 1), 0)
+end
+
+T["comments"]["an inline comment keeps the two diff sides in line"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(10) })
+  H.write(root, "a.txt", H.lines(10, { [2] = "two\nextra" }))
+  local ws = open(root)
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 6, 0 })
+  workspace.actions.comment_line()
+  type_and_save("on six")
+
+  local ns = require("iz.ui.inline").ns
+  local function virt(win)
+    local buf = api.nvim_win_get_buf(win)
+    return vim.tbl_map(function(m)
+      return { m[2], #m[4].virt_lines }
+    end, api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true }))
+  end
+  -- Working tree line 6 is base line 5: one virtual line under each.
+  H.eq(virt(ws.wins.right), { { 5, 1 } })
+  H.eq(virt(ws.wins.left), { { 4, 1 } })
+end
+
 T["comments"]["opening the panel keeps the two diff sides the same width"] = function()
   local root = H.repo({ ["a.txt"] = "a\n" })
   H.write(root, "a.txt", "A\n")
@@ -463,10 +591,174 @@ T["comments"]["the thread float is roomy and keeps markdown rendered under the c
   api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
   workspace.actions.open_thread()
   local float = api.nvim_get_current_win()
-  H.eq(api.nvim_win_get_height(float) >= math.min(12, vim.o.lines - 8), true)
+  H.eq(api.nvim_win_get_height(float), math.floor(vim.o.lines * 0.6))
   H.eq(api.nvim_win_get_width(float) >= math.min(72, vim.o.columns - 6), true)
   H.eq(vim.wo[float].concealcursor, "nc")
   vim.cmd("close")
+end
+
+T["summary"] = MiniTest.new_set()
+
+--- Real order: the agent ran /iz-summary before :Iz.
+local function repo_with_summary()
+  local root = H.repo({ ["a.txt"] = H.lines(5), ["b.txt"] = H.lines(5) })
+  H.write(root, "a.txt", H.lines(5, { [3] = "three" }))
+  H.write(root, "b.txt", H.lines(5, { [4] = "four" }))
+  H.write(root, ".iz/summaries/20261113-120000.jsonl", vim.json.encode({
+    file = "a.txt",
+    summary = "Line three now names the constant the parser expects.",
+  }) .. "\n")
+  return root
+end
+
+--- The leaves of `layout` (from winlayout()), depth first.
+local function leaves(layout)
+  if layout[1] == "leaf" then
+    return { layout[2] }
+  end
+  local out = {}
+  for _, child in ipairs(layout[2]) do
+    vim.list_extend(out, leaves(child))
+  end
+  return out
+end
+
+T["summary"]["a strip above both diff sides shows it, only for a file that has one"] = function()
+  local root = repo_with_summary()
+  local ws = open(root)
+  H.eq(ws.path, "a.txt")
+  local strip = assert(ws.summary.win)
+  H.eq(api.nvim_buf_get_lines(api.nvim_win_get_buf(strip), 0, -1, false), {
+    "Line three now names the constant the parser expects.",
+  })
+  H.eq(vim.wo[strip].statusline, " a.txt · agent says")
+  -- One column: the strip on top, the two diff sides side by side under it.
+  local col = vim.tbl_filter(function(node)
+    return node[1] == "col"
+  end, vim.fn.winlayout()[2])[1]
+  H.eq(leaves(col), { strip, ws.wins.left, ws.wins.right })
+  H.eq(col[2][2][1], "row")
+  H.eq({ vim.wo[ws.wins.left].diff, vim.wo[ws.wins.right].diff }, { true, true })
+
+  -- The panel stays full height beside it, and the narrower strip grows to fit.
+  local strip_buf = api.nvim_win_get_buf(strip)
+  vim.bo[strip_buf].modifiable = true
+  api.nvim_buf_set_lines(strip_buf, 0, -1, false, { string.rep("word ", 30) })
+  vim.bo[strip_buf].modifiable = false
+  local before = api.nvim_win_get_height(strip)
+  workspace.actions.toggle_panel()
+  H.eq(api.nvim_win_get_height(strip) > before, true)
+  local top = vim.tbl_map(function(node)
+    return node[1] == "leaf" and node[2] or node[1]
+  end, vim.fn.winlayout()[2])
+  H.eq(top, { ws.wins.files, "col", ws.panel.win })
+  workspace.actions.toggle_panel()
+
+  api.nvim_set_current_win(ws.wins.files)
+  api.nvim_win_set_cursor(ws.wins.files, { 2, 0 })
+  workspace.actions.open_under_cursor()
+  wait()
+  H.eq(ws.path, "b.txt")
+  H.eq(api.nvim_win_is_valid(strip), false)
+  H.eq({ vim.wo[ws.wins.left].diff, vim.wo[ws.wins.right].diff }, { true, true })
+  local l, r = api.nvim_win_get_width(ws.wins.left), api.nvim_win_get_width(ws.wins.right)
+  H.eq(math.abs(l - r) <= 1, true)
+end
+
+T["summary"]["the strip says when the file changed after the summary"] = function()
+  local root = repo_with_summary()
+  local ws = open(root)
+  H.write(root, "a.txt", H.lines(5, { [3] = "three", [5] = "five" }))
+  workspace.refresh()
+  wait()
+  local label = vim.wo[ws.summary.win].statusline
+  H.eq(label, " a.txt · agent says · outdated: the file changed since")
+end
+
+T["co-reviewer"] = MiniTest.new_set()
+
+--- Real order: the co-reviewer ran before :Iz, maybe before `.iz/` existed.
+local function repo_with_suggestions()
+  local root = H.repo({ ["a.txt"] = H.lines(5) })
+  H.write(root, "a.txt", H.lines(5, { [3] = "three" }))
+  H.write(root, ".iz/coreview/20261113-120000.jsonl", table.concat({
+    vim.json.encode({ file = "a.txt", line = 3, body = "three is a magic number" }),
+    vim.json.encode({ file = "a.txt", body = "no test covers this" }),
+  }, "\n") .. "\n")
+  return root
+end
+
+T["co-reviewer"]["suggestions written before :Iz show up in their own group"] = function()
+  local root = repo_with_suggestions()
+  local ws = open(root)
+  H.eq(panel_lines(ws), {
+    "Suggested by the co-reviewer (2)",
+    "  a.txt",
+    "    co-reviewer  no test covers this",
+    "",
+    "  a.txt:3",
+    "    co-reviewer  three is a magic number",
+  })
+  -- `.iz/` stays out of git even though the co-reviewer created it.
+  H.eq(H.git(root, { "status", "--porcelain" }), "M a.txt")
+  H.eq(vim.uv.fs_stat(root .. "/.iz/coreview/20261113-120000.jsonl"), nil)
+end
+
+T["co-reviewer"]["s sends a suggestion as it is and I ignores the rest"] = function()
+  local root = repo_with_suggestions()
+  local ws = open(root)
+  api.nvim_set_current_win(ws.panel.win)
+  api.nvim_win_set_cursor(ws.panel.win, { 5, 0 })
+  api.nvim_feedkeys("s", "x", false)
+  local sent = ws.session.data.comments[1]
+  H.eq(sent.thread[2], { author = "user", body = "", ts = sent.thread[2].ts })
+  H.eq(panel_lines(ws)[1], "Suggested by the co-reviewer (1)")
+  H.eq(vim.tbl_contains(panel_lines(ws), "    you    sent to the agent"), true)
+  local text = H.read(root, ".iz/brief.md")
+  H.eq(text:find(sent.id .. " L3: three is a magic number", 1, true) ~= nil, true)
+  -- Inline, the diff still says what was sent.
+  local chunks = vim.tbl_map(function(chunk)
+    return chunk[1]
+  end, require("iz.ui.inline").virt_lines(sent, 80)[1])
+  H.eq(table.concat(chunks), "  ┃ sent: three is a magic number")
+
+  api.nvim_feedkeys("I", "x", false)
+  H.eq(ws.session.data.comments[2].status, "ignored")
+  H.eq(sent.status, "open")
+end
+
+T["co-reviewer"]["the thread names the co-reviewer and sends with s"] = function()
+  local root = repo_with_suggestions()
+  local ws = open(root)
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
+  workspace.actions.open_thread()
+  local float = api.nvim_get_current_win()
+  H.eq(api.nvim_buf_get_lines(0, 0, -1, false), { "co-reviewer", "three is a magic number" })
+  H.eq(api.nvim_win_get_config(float).footer[1][1]:find("^ s send") ~= nil, true)
+  api.nvim_feedkeys("s", "x", false)
+  H.eq(api.nvim_win_is_valid(float), false)
+  H.eq(require("iz.session.comments").awaiting_agent(ws.session.data.comments[1]), true)
+end
+
+T["comments"]["the thread float scales with a wide screen"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(5) })
+  H.write(root, "a.txt", H.lines(5, { [3] = "three" }))
+  local ws = open(root)
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
+  workspace.actions.comment_line()
+  type_and_save("short")
+  local columns, lines = vim.o.columns, vim.o.lines
+  vim.o.columns, vim.o.lines = 250, 80
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
+  workspace.actions.open_thread()
+  local float = api.nvim_get_current_win()
+  local size = { api.nvim_win_get_width(float), api.nvim_win_get_height(float) }
+  vim.cmd("close")
+  vim.o.columns, vim.o.lines = columns, lines
+  H.eq(size, { 150, 48 })
 end
 
 T["comments"]["anchors follow the code on refresh and get lost when it disappears"] = function()

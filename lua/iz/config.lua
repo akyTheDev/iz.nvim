@@ -3,9 +3,15 @@ local M = {}
 M.defaults = {
   files_width = 42,
   panel_width = 56,
+  -- Rows of the strip above the diff that shows the agent's Summary of the
+  -- file (/iz-summary); 0 never shows it.
+  summary_height = 5,
   -- Moving through the file list shows the file under the cursor in the diff;
   -- `<CR>` still moves into it.
   preview_on_move = true,
+  -- The thread float, as a share of the screen; it grows past the height for
+  -- long threads.
+  thread = { width = 0.6, height = 0.6 },
   keymaps = {
     -- Insert-mode key in the comment editor; falls back to a literal <C-v>
     -- when the clipboard holds no image.
@@ -48,6 +54,8 @@ M.defaults = {
       resolve = "r",
       ignore = "i",
       reopen = "o",
+      send = "s",
+      ignore_suggestions = "I",
       move = "m",
       close = "q",
       help = "?",

@@ -6,7 +6,7 @@ local util = require("iz.util")
 local M = {}
 
 ---@class iz.Message
----@field author "user"|"agent"
+---@field author "user"|"agent"|"coreviewer"
 ---@field body string
 ---@field claim? "addressed"|"declined"|"question"
 ---@field ts string
@@ -55,6 +55,13 @@ end
 function M.claim(comment)
   local last = M.last(comment)
   return last.author == "agent" and last.claim or nil
+end
+
+--- A Suggestion: written by the Co-reviewer and not sent by the user yet.
+--- It stays out of the Brief until the user sends it.
+---@param comment iz.Comment
+function M.suggested(comment)
+  return comment.status == "open" and M.last(comment).author == "coreviewer"
 end
 
 --- Open and waiting for the agent: the user had the last word.
@@ -113,10 +120,11 @@ end
 
 ---@param session iz.Session
 ---@param spec iz.NewComment
+---@param author "user"|"coreviewer"
 ---@return iz.Comment
-function M.add(session, spec)
+local function new_comment(session, spec, author)
   assert(vim.trim(spec.body) ~= "", "empty comment")
-  local comment = {
+  return {
     id = new_id(session),
     scope = spec.scope,
     file = spec.file,
@@ -126,11 +134,38 @@ function M.add(session, spec)
     anchor = spec.anchor,
     status = "open",
     attachments = spec.attachments or {},
-    thread = { { author = "user", body = spec.body, ts = util.now() } },
+    thread = { { author = author, body = spec.body, ts = util.now() } },
   }
+end
+
+---@param session iz.Session
+---@param spec iz.NewComment
+---@return iz.Comment
+function M.add(session, spec)
+  local comment = new_comment(session, spec, "user")
   table.insert(session.data.comments, comment)
   session_mod.save(session)
   return comment
+end
+
+--- A Suggestion from the Co-reviewer. The caller saves, so a batch lands in one write.
+---@param session iz.Session
+---@param spec iz.NewComment
+---@return iz.Comment
+function M.add_suggestion(session, spec)
+  local comment = new_comment(session, spec, "coreviewer")
+  table.insert(session.data.comments, comment)
+  return comment
+end
+
+--- Sends a Suggestion to the agent as it is: an empty Reply from the user,
+--- so the thread records who sent it and when.
+---@param session iz.Session
+---@param comment iz.Comment
+function M.send(session, comment)
+  assert(M.suggested(comment), "only an unsent Suggestion can be sent")
+  table.insert(comment.thread, { author = "user", body = "", ts = util.now() })
+  session_mod.save(session)
 end
 
 --- A Reply from the user; it clears any Claim and sends the Comment back to the agent.
