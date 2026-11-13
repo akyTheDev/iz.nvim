@@ -116,6 +116,8 @@ Dosya listesinin başlığı ilerlemeyi gösterir: stage'lenen hunk sayısı / t
 
 Diff penceresindeki tuşlar `<leader>i` ile başlar, çünkü sağ taraf senin gerçek dosyandır ve düzenlenebilir kalır. Kendi düzenlemelerin de agent'ınkiler gibi Unstaged olarak görünür. `<leader>if`, `ip`, `il` ve `iq` dosya listesinde ve panelde de çalışır.
 
+Review sırasında kod okumak: diff penceresinden `gd`, `:edit` ya da bir dosya seçici, dosyayı review'un hemen yanındaki bir okuma sekmesinde, imleç hedefteyken açar. Diff olduğu gibi kalır; `gT` ya da `:Iz` seni geri götürür. Sonraki atlamalar aynı okuma sekmesini kullanır.
+
 ## Komutlar
 
 | Komut | |

@@ -42,6 +42,10 @@ local M = {}
 ---@field panel { buf: integer, win?: integer, ids: table<integer, string>, manual?: boolean }
 ---@field summary { buf: integer, win?: integer } The strip above the diff.
 ---@field mapped table<integer, boolean> Buffers that carry our diff keymaps.
+---@field bufs { left?: integer, right?: integer } What `show()` put in the diff windows.
+---@field showing boolean `show()` is placing buffers; the diff windows are in flux.
+---@field reading? integer The tab where code opened from the diff windows goes.
+---@field reading_hint? boolean The reading tab was explained once.
 ---@field watchers uv.uv_fs_event_t[]
 ---@field augroup integer
 ---@field suggested? boolean The "looks done" hint was shown for the current state.
@@ -321,14 +325,88 @@ end
 local function show(path)
   W.path = path
   local ctx = diff_ctx()
-  if ctx then
-    backend.open(ctx)
-    inline.draw(ctx)
-    map_diff_keys(api.nvim_win_get_buf(W.wins.left))
-    map_diff_keys(api.nvim_win_get_buf(W.wins.right))
+  W.showing = true
+  local ok, err = pcall(function()
+    if ctx then
+      backend.open(ctx)
+      inline.draw(ctx)
+      map_diff_keys(api.nvim_win_get_buf(W.wins.left))
+      map_diff_keys(api.nvim_win_get_buf(W.wins.right))
+    end
+  end)
+  W.bufs = {
+    left = api.nvim_win_get_buf(W.wins.left),
+    right = api.nvim_win_get_buf(W.wins.right),
+  }
+  W.showing = false
+  if not ok then
+    error(err, 0)
   end
   draw_summary()
   set_winbars()
+end
+
+--- Whether the diff windows still show what `show()` put there; `gd` or
+--- `:edit` in them may have replaced it.
+local function intact()
+  return W.bufs.left == api.nvim_win_get_buf(W.wins.left)
+    and W.bufs.right == api.nvim_win_get_buf(W.wins.right)
+end
+
+--- Moves a buffer that was opened in a diff window (`gd`, `:edit`, a picker)
+--- to the reading tab, cursor and all, and puts the diff back. Reviewing and
+--- reading code don't fight over the same window.
+---@param win integer a diff window
+---@param expected integer the buffer `show()` put there
+local function to_reading_tab(win, expected)
+  local foreign = api.nvim_win_get_buf(win)
+  local cursor = api.nvim_win_get_cursor(win)
+  -- Back first: the diff window is whole again whatever happens next.
+  api.nvim_win_set_buf(win, expected)
+  local tab = W.reading
+  if tab and api.nvim_tabpage_is_valid(tab) then
+    api.nvim_set_current_tabpage(tab)
+  else
+    vim.cmd("tabnew")
+    W.reading = api.nvim_get_current_tabpage()
+  end
+  local target = api.nvim_get_current_win()
+  local scratch = api.nvim_win_get_buf(target)
+  api.nvim_win_set_buf(target, foreign)
+  pcall(api.nvim_win_set_cursor, target, cursor)
+  api.nvim_win_call(target, function()
+    vim.cmd("normal! zv")
+  end)
+  local unnamed = api.nvim_buf_get_name(scratch) == "" and not vim.bo[scratch].modified
+  if scratch ~= foreign and unnamed and #vim.fn.win_findbuf(scratch) == 0 then
+    pcall(api.nvim_buf_delete, scratch, {})
+  end
+  if not W.reading_hint then
+    W.reading_hint = true
+    notify("opened in the reading tab; gT or :Iz goes back to the review")
+  end
+end
+
+--- Runs after something put a buffer in a window. Scheduled: a jump such as
+--- `gd` places the buffer first and moves the cursor after.
+local function guard_diff_windows()
+  vim.schedule(function()
+    if not M.get() or W.showing then
+      return
+    end
+    for _, side in ipairs({ "left", "right" }) do
+      local win, expected = W.wins[side], W.bufs[side]
+      if
+        api.nvim_win_is_valid(win)
+        and expected
+        and api.nvim_buf_is_valid(expected)
+        and api.nvim_win_get_buf(win) ~= expected
+      then
+        to_reading_tab(win, expected)
+        return
+      end
+    end
+  end)
 end
 
 --- Says once when nothing is left to look at; says it again only after the
@@ -391,7 +469,8 @@ local function refresh_inner()
     keep = first_path()
   end
   local ctx = diff_ctx()
-  if keep == W.path and ctx and not W.filter then
+  -- With something else in a diff window, redraw rather than mark that buffer.
+  if keep == W.path and ctx and not W.filter and intact() then
     backend.mark(ctx)
     for _, win in ipairs({ W.wins.left, W.wins.right }) do
       api.nvim_win_call(win, function()
@@ -637,8 +716,9 @@ function M.actions.open_under_cursor()
   if path then
     job(function()
       exclusive(function()
-        -- Already previewed while moving through the list.
-        if path ~= W.path then
+        -- Already previewed while moving through the list, unless the diff
+        -- windows show something else by now.
+        if path ~= W.path or not intact() then
           show(path)
         end
         focus_hunk(true)
@@ -1258,6 +1338,8 @@ function M._open()
     panel = { buf = scratch("iz-panel", "iz://comments"), ids = {} },
     summary = { buf = scratch("iz-summary", "iz://summary") },
     mapped = {},
+    bufs = {},
+    showing = false,
     watchers = {},
     augroup = api.nvim_create_augroup("iz.workspace", { clear = true }),
   }
@@ -1280,6 +1362,10 @@ function M._open()
   draw_comments()
   suggest_done()
 
+  api.nvim_create_autocmd("BufWinEnter", {
+    group = W.augroup,
+    callback = guard_diff_windows,
+  })
   api.nvim_create_autocmd("BufWritePost", {
     group = W.augroup,
     callback = function(ev)

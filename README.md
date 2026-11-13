@@ -116,6 +116,8 @@ The file list's title keeps score: hunks staged out of all, and open comments. M
 
 Diff-window keys use `<leader>i` because the right side is your real file and stays editable. Your own edits show up as Unstaged like the agent's. `<leader>if`, `ip`, `il` and `iq` also work in the file list and the panel.
 
+Reading code while reviewing: `gd`, `:edit` or a file picker from a diff window opens the file in a reading tab, right after the review, with the cursor on the target. The diff stays as it was; `gT` or `:Iz` takes you back. Later jumps reuse the same reading tab.
+
 ## Commands
 
 | Command | |

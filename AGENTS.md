@@ -86,6 +86,7 @@ tests/               test_*.lua (mini.test) + helpers.lua
 
 - The right diff window is the user's real, editable file. Never map plain editing keys there (`s`, `u`, `x`, `c`...): diff-window keys use the `<leader>i` prefix; plain keys are fine only in iz's own read-only buffers. Remove buffer-local maps from real buffers when the workspace closes.
 - Don't change global options (`diffopt`, `fillchars`...). Window-local options are fine on iz's windows.
+- The diff windows show only what `show()` put there. Anything else that lands in them (`gd`, `:edit`, a picker) moves to the reading tab; don't draw iz marks on a buffer that isn't `W.bufs`. `winfixbuf` is no substitute: it makes `gd` fail with E1513.
 - Text that belongs above a file's diff goes in a window of its own, like the Summary strip: virtual lines above line 1 hide inside folds and show on one diff side only.
 - Replace a scratch buffer by putting the new one into its window first. Wiping a buffer that a window still shows closes the window (see `place_scratch` in `diff/native.lua`). Match buffers by exact name; `bufnr()` also matches partially.
 - On close, clear iz namespaces from every buffer, not just the ones in iz windows: `:tabclose` can remove the windows first.

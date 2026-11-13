@@ -117,6 +117,11 @@ only show the start of each message.
   r  i  o       resolve / ignore / reopen
   q  <Esc>      close
 
+Reading tab                                                   *iz-reading-tab*
+A file opened in a diff window (`gd`, `:edit`, a picker) moves to a reading
+tab right after the review, cursor on the target, and the diff comes back as
+it was. `gT` or |:Iz| returns to the review. Later jumps reuse the tab.
+
 The right side is your real file. Edit and save it as usual; your changes
 show up as Unstaged. Hunk actions are refused while the file has unsaved
 changes. Discarded changes are kept in the Session's `trash/` directory.

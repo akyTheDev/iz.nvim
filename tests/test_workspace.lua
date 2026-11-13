@@ -111,6 +111,83 @@ T["moving through the file list shows the file under the cursor, focus stays"] =
   H.eq(api.nvim_win_get_cursor(ws.wins.right)[1], 20)
 end
 
+T["reading tab"] = MiniTest.new_set()
+
+--- Jumps the way `gd` does: the LSP client puts the target in the current window.
+---@param path string
+---@param line integer 1-based
+local function lsp_jump(path, line)
+  local pos = { line = line - 1, character = 0 }
+  local location = { uri = vim.uri_from_fname(path), range = { start = pos, ["end"] = pos } }
+  vim.lsp.util.show_document(location, "utf-8", { focus = true })
+end
+
+local function close_reading_tab(ws)
+  local reading = api.nvim_get_current_tabpage()
+  api.nvim_set_current_tabpage(ws.tab)
+  if reading ~= ws.tab and api.nvim_tabpage_is_valid(reading) then
+    vim.cmd(api.nvim_tabpage_get_number(reading) .. "tabclose")
+  end
+end
+
+T["reading tab"]["a jump out of the diff opens in the reading tab and the diff stays"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(10), ["lib.txt"] = H.lines(20) })
+  H.write(root, "a.txt", H.lines(10, { [3] = "three" }))
+  local ws = open(root)
+  local diff_buf = api.nvim_win_get_buf(ws.wins.right)
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
+
+  lsp_jump(root .. "/lib.txt", 12)
+  H.eq(vim.wait(2000, function()
+    return api.nvim_get_current_tabpage() ~= ws.tab
+  end, 10), true)
+  -- Reading: the target, at the definition, without the diff's options.
+  H.eq(api.nvim_buf_get_name(0), root .. "/lib.txt")
+  H.eq(api.nvim_win_get_cursor(0)[1], 12)
+  H.eq({ vim.wo.diff, vim.wo.scrollbind, vim.wo.winbar }, { false, false, "" })
+  -- Reviewing: untouched.
+  H.eq(api.nvim_win_get_buf(ws.wins.right), diff_buf)
+  H.eq(vim.wo[ws.wins.right].diff, true)
+  H.eq(api.nvim_win_get_cursor(ws.wins.right)[1], 3)
+
+  -- The next jump reuses the reading tab.
+  local tabs = #api.nvim_list_tabpages()
+  api.nvim_set_current_tabpage(ws.tab)
+  api.nvim_set_current_win(ws.wins.right)
+  vim.cmd("edit " .. root .. "/lib.txt")
+  H.eq(vim.wait(2000, function()
+    return api.nvim_get_current_tabpage() ~= ws.tab
+  end, 10), true)
+  H.eq(#api.nvim_list_tabpages(), tabs)
+  H.eq(api.nvim_win_get_buf(ws.wins.right), diff_buf)
+  close_reading_tab(ws)
+end
+
+T["reading tab"]["the diff comes back and stays clean if something slipped into it"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(10), ["lib.txt"] = H.lines(5) })
+  H.write(root, "a.txt", H.lines(10, { [3] = "three" }))
+  local ws = open(root)
+  local diff_buf = api.nvim_win_get_buf(ws.wins.right)
+  -- Without autocommands nothing moves it to the reading tab.
+  api.nvim_set_current_win(ws.wins.right)
+  vim.cmd("noautocmd edit " .. root .. "/lib.txt")
+  local lib = api.nvim_get_current_buf()
+
+  workspace.refresh()
+  wait()
+  -- A refresh redraws the diff instead of marking the stray buffer.
+  H.eq(api.nvim_buf_get_extmarks(lib, hl.ns, 0, -1, {}), {})
+  H.eq(api.nvim_win_get_buf(ws.wins.right), diff_buf)
+
+  vim.cmd("noautocmd edit " .. root .. "/lib.txt")
+  api.nvim_set_current_win(ws.wins.files)
+  api.nvim_win_set_cursor(ws.wins.files, { 1, 0 })
+  workspace.actions.open_under_cursor()
+  wait()
+  H.eq(api.nvim_win_get_buf(ws.wins.right), diff_buf)
+end
+
 T["staging from the diff marks the hunk and updates the list"] = function()
   local root = H.repo({ ["a.txt"] = H.lines(20) })
   H.write(root, "a.txt", H.lines(20, { [2] = "two", [15] = "fifteen" }))
