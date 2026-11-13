@@ -85,6 +85,32 @@ T["opening a file from the list puts the cursor on its first hunk"] = function()
   H.eq(api.nvim_win_get_cursor(ws.wins.files)[1], 2)
 end
 
+T["moving through the file list shows the file under the cursor, focus stays"] = function()
+  local root = H.repo({ ["a.txt"] = "a\n", ["b.txt"] = H.lines(30) })
+  H.write(root, "a.txt", "A\n")
+  H.write(root, "b.txt", H.lines(30, { [20] = "twenty" }))
+  local ws = open(root)
+  H.eq(ws.path, "a.txt")
+  api.nvim_set_current_win(ws.wins.files)
+  api.nvim_win_set_cursor(ws.wins.files, { 2, 0 })
+  -- Headless Neovim fires CursorMoved only from its main loop, not for feedkeys.
+  api.nvim_exec_autocmds("CursorMoved", { buffer = ws.files_buf })
+  -- The preview is debounced.
+  H.eq(vim.wait(3000, function()
+    return ws.path == "b.txt"
+  end, 10), true)
+  wait()
+  H.eq(api.nvim_get_current_win(), ws.wins.files)
+  H.eq(api.nvim_buf_get_name(api.nvim_win_get_buf(ws.wins.right)), root .. "/b.txt")
+  H.eq(api.nvim_win_get_cursor(ws.wins.right)[1], 20)
+
+  -- <CR> moves into the file already shown.
+  workspace.actions.open_under_cursor()
+  wait()
+  H.eq(api.nvim_get_current_win(), ws.wins.right)
+  H.eq(api.nvim_win_get_cursor(ws.wins.right)[1], 20)
+end
+
 T["staging from the diff marks the hunk and updates the list"] = function()
   local root = H.repo({ ["a.txt"] = H.lines(20) })
   H.write(root, "a.txt", H.lines(20, { [2] = "two", [15] = "fifteen" }))
@@ -404,7 +430,42 @@ T["comments"]["the thread opens from the commented line in the diff"] = function
   api.nvim_set_current_win(ws.wins.right)
   api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
   workspace.actions.open_thread()
-  H.eq(api.nvim_buf_get_lines(0, 0, -1, false), { "**you**", "use a constant" })
+  H.eq(api.nvim_buf_get_lines(0, 0, -1, false), { "you", "use a constant" })
+  vim.cmd("close")
+end
+
+T["comments"]["the thread shows who wrote each message without markdown marks"] = function()
+  local thread = require("iz.ui.thread")
+  local lines, marks = thread.render({
+    id = "c_1", scope = "line", file = "a.txt", line = 3, status = "open", attachments = {},
+    thread = {
+      { author = "user", body = "why?", ts = "" },
+      { author = "agent", claim = "question", body = "revert it?\nor keep it", ts = "" },
+    },
+  })
+  H.eq(lines, { "you", "why?", "", "agent · question", "revert it?", "or keep it" })
+  H.eq(marks, {
+    { 1, "IzThreadUser", 0, 3 },
+    { 4, "IzThreadAgent", 0, 5 },
+    { 4, "IzClaim", 5, #"agent · question" },
+  })
+end
+
+T["comments"]["the thread float is roomy and keeps markdown rendered under the cursor"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(5) })
+  H.write(root, "a.txt", H.lines(5, { [3] = "three" }))
+  local ws = open(root)
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
+  workspace.actions.comment_line()
+  type_and_save("short")
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 3, 0 })
+  workspace.actions.open_thread()
+  local float = api.nvim_get_current_win()
+  H.eq(api.nvim_win_get_height(float) >= math.min(12, vim.o.lines - 8), true)
+  H.eq(api.nvim_win_get_width(float) >= math.min(72, vim.o.columns - 6), true)
+  H.eq(vim.wo[float].concealcursor, "nc")
   vim.cmd("close")
 end
 

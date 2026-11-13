@@ -3,6 +3,9 @@ local M = {}
 M.defaults = {
   files_width = 42,
   panel_width = 56,
+  -- Moving through the file list shows the file under the cursor in the diff;
+  -- `<CR>` still moves into it.
+  preview_on_move = true,
   keymaps = {
     -- Insert-mode key in the comment editor; falls back to a literal <C-v>
     -- when the clipboard holds no image.

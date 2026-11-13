@@ -505,17 +505,31 @@ function M.actions.toggle_filter()
   end)
 end
 
---- Moves the cursor into the real file, on its first or last Hunk.
+--- Puts the right diff window's cursor on the file's first or last Hunk,
+--- without moving into it.
 ---@param first boolean
-local function focus_hunk(first)
+local function reveal_hunk(first)
   local ctx = diff_ctx()
   if not ctx then
     return
   end
   local targets = backend.targets(ctx, W.wins.right)
   local line = first and targets[1] or targets[#targets]
+  local max = api.nvim_buf_line_count(api.nvim_win_get_buf(W.wins.right))
+  api.nvim_win_set_cursor(W.wins.right, { math.min(math.max(line or 1, 1), max), 0 })
+  api.nvim_win_call(W.wins.right, function()
+    vim.cmd("normal! zz")
+  end)
+end
+
+--- Moves the cursor into the real file, on its first or last Hunk.
+---@param first boolean
+local function focus_hunk(first)
+  if not diff_ctx() then
+    return
+  end
+  reveal_hunk(first)
   api.nvim_set_current_win(W.wins.right)
-  api.nvim_win_set_cursor(W.wins.right, { math.max(line or 1, 1), 0 })
 end
 
 --- Back to the file list, on the file being shown.
@@ -534,11 +548,42 @@ function M.actions.open_under_cursor()
   if path then
     job(function()
       exclusive(function()
-        show(path)
+        -- Already previewed while moving through the list.
+        if path ~= W.path then
+          show(path)
+        end
         focus_hunk(true)
       end)
     end)
   end
+end
+
+local preview_timer
+--- Shows the file under the cursor of the file list in the diff, on its first
+--- Hunk, while the cursor stays in the list. Debounced: holding `j` shows only
+--- where it stops.
+local function preview_under_cursor()
+  preview_timer = preview_timer or assert(vim.uv.new_timer())
+  preview_timer:stop()
+  preview_timer:start(80, 0, function()
+    vim.schedule(function()
+      if not M.get() or api.nvim_get_current_win() ~= W.wins.files then
+        return
+      end
+      local path = W.line_paths[vim.fn.line(".", W.wins.files)]
+      if not path or path == W.path then
+        return
+      end
+      job(function()
+        exclusive(function()
+          if M.get() and path ~= W.path then
+            show(path)
+            reveal_hunk(true)
+          end
+        end)
+      end)
+    end)
+  end)
 end
 
 ---@param dir 1|-1
@@ -943,6 +988,13 @@ local function map_files_keys()
   bufmap(buf, k.help, function()
     help.open("files")
   end, "show keys")
+  if config.options.preview_on_move then
+    api.nvim_create_autocmd("CursorMoved", {
+      group = W.augroup,
+      buffer = buf,
+      callback = preview_under_cursor,
+    })
+  end
 end
 
 local function map_panel_keys()

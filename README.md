@@ -84,7 +84,7 @@ Using another agent? `:IzExport` copies the Brief, inbox instructions included, 
 | | `q` | cancel |
 | | `<C-v>` (insert) | paste a screenshot (falls back to normal `<C-v>`) |
 
-The file list's title keeps score: hunks staged out of all, and open comments.
+The file list's title keeps score: hunks staged out of all, and open comments. Moving the cursor through the list shows each file in the diff while you stay in the list; `<CR>` moves into it. Turn this off with `preview_on_move = false`.
 
 Diff-window keys use `<leader>i` because the right side is your real file and stays editable. Your own edits show up as Unstaged like the agent's. `<leader>if`, `ip`, `il` and `iq` also work in the file list and the panel.
 
@@ -107,6 +107,7 @@ Defaults, all optional:
 require("iz").setup({
   files_width = 42,
   panel_width = 56,
+  preview_on_move = true, -- the diff follows the cursor in the file list
   keymaps = {
     paste_image = "<C-v>",
     files = { open = "<CR>", stage = "s", unstage = "u", discard = "x", undo_discard = "U",
