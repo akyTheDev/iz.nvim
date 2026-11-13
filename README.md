@@ -140,6 +140,7 @@ require("iz").setup({
   summary_height = 5, -- rows of the agent's summary above the diff; 0 hides it
   preview_on_move = true, -- the diff follows the cursor in the file list
   thread = { width = 0.6, height = 0.6 }, -- thread float, as a share of the screen
+  editor = { width = 0.6, height = 0.3 }, -- comment editor: width, and height of the input
   keymaps = {
     paste_image = "<C-v>",
     files = { open = "<CR>", stage = "s", unstage = "u", discard = "x", undo_discard = "U",
@@ -156,7 +157,9 @@ require("iz").setup({
 })
 ```
 
-Set a key to `""` to disable it. Highlight groups (`IzStaged`, `IzNewSinceApproval`, `IzComment`, `IzClaim`, …) are defined with `default = true`, so your colorscheme can override them.
+The comment editor shows what you're commenting on (the code, or the thread you reply to) above the input. Its buffer has its own filetype, `iz-comment`, highlighted as markdown, so completion plugins and language servers stay out of it; this affects only that buffer.
+
+Set a key to `""` to disable it. Highlight groups (`IzStaged`, `IzNewSinceApproval`, `IzComment`, `IzClaim`, `IzFloat`, `IzFloatBorder`, …) are defined with `default = true`, so your colorscheme can override them.
 
 ## Files
 

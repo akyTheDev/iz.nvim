@@ -12,6 +12,9 @@ M.defaults = {
   -- The thread float, as a share of the screen; it grows past the height for
   -- long threads.
   thread = { width = 0.6, height = 0.6 },
+  -- The comment editor, as a share of the screen: its width, and the height
+  -- of the part you type in. The code or thread above it comes on top.
+  editor = { width = 0.6, height = 0.3 },
   keymaps = {
     -- Insert-mode key in the comment editor; falls back to a literal <C-v>
     -- when the clipboard holds no image.

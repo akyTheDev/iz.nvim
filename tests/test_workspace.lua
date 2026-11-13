@@ -23,6 +23,18 @@ end
 local T = MiniTest.new_set({
   hooks = {
     post_case = function()
+      -- A failed case can leave a float open in insert mode; it must not
+      -- hang the cases after it.
+      vim.cmd("stopinsert")
+      for _, win in ipairs(api.nvim_list_wins()) do
+        if api.nvim_win_get_config(win).relative ~= "" then
+          local buf = api.nvim_win_get_buf(win)
+          pcall(function()
+            vim.bo[buf].modified = false
+          end)
+          pcall(api.nvim_win_close, win, true)
+        end
+      end
       workspace.close()
       wait()
     end,
@@ -271,7 +283,7 @@ end
 --- Types `body` into the open comment editor and saves it.
 local function type_and_save(body)
   local buf = api.nvim_get_current_buf()
-  H.eq(vim.bo[buf].filetype, "markdown")
+  H.eq(vim.bo[buf].filetype, "iz-comment")
   vim.cmd("stopinsert")
   api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(body, "\n"))
   vim.cmd("write")
@@ -838,6 +850,153 @@ T["comments"]["the comment editor discards an empty body"] = function()
   workspace.actions.comment_session()
   type_and_save("   ")
   H.eq(#ws.session.data.comments, 0)
+end
+
+T["editor"] = MiniTest.new_set()
+
+--- Floats other than the current window, with their buffer lines.
+local function other_floats()
+  local out = {}
+  for _, win in ipairs(api.nvim_tabpage_list_wins(0)) do
+    if win ~= api.nvim_get_current_win() and api.nvim_win_get_config(win).relative ~= "" then
+      out[#out + 1] = win
+    end
+  end
+  return out
+end
+
+T["editor"]["shows the code being commented on above the input"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(9) })
+  H.write(root, "a.txt", H.lines(9, { [4] = "four", [5] = "five" }))
+  local ws = open(root)
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 4, 0 })
+  vim.cmd("normal! Vj")
+  workspace.actions.comment_line()
+  local input = api.nvim_get_current_win()
+  local ctx = other_floats()
+  H.eq(#ctx, 1)
+  local ctx_buf = api.nvim_win_get_buf(ctx[1])
+  H.eq(api.nvim_buf_get_lines(ctx_buf, 0, -1, false), { "four", "five" })
+  H.eq(api.nvim_win_get_config(ctx[1]).title[1][1], " comment · a.txt:4-5 ")
+  H.eq(api.nvim_win_get_config(ctx[1]).focusable, false)
+  -- Line numbers are drawn, not part of the text.
+  local numbers = vim.tbl_map(function(m)
+    return m[4].virt_text[1][1]
+  end, api.nvim_buf_get_extmarks(ctx_buf, -1, 0, -1, { details = true }))
+  H.eq(numbers, { "4  ", "5  " })
+  -- Leaving the input any way, here `:close`, takes the context with it.
+  api.nvim_set_current_win(input)
+  vim.cmd("stopinsert")
+  vim.cmd("close")
+  H.eq(vim.wait(1000, function()
+    return not api.nvim_win_is_valid(ctx[1])
+  end, 10), true)
+end
+
+T["editor"]["a reply shows the thread it answers"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(5) })
+  H.write(root, "a.txt", H.lines(5, { [3] = "three" }))
+  local ws = open(root)
+  local comments = require("iz.session.comments")
+  local c = comments.add(ws.session, {
+    scope = "line", file = "a.txt", side = "new", line = 3, end_line = 3,
+    anchor = { snippet = "three", context_before = {}, state = "found" }, body = "why?",
+  })
+  comments.agent_reply(ws.session, c, "question", "keep it?")
+  workspace.refresh()
+  wait()
+  api.nvim_set_current_win(ws.panel.win)
+  api.nvim_win_set_cursor(ws.panel.win, { 2, 0 })
+  workspace.actions.panel_reply()
+  local ctx = other_floats()[1]
+  H.eq(api.nvim_buf_get_lines(api.nvim_win_get_buf(ctx), 0, -1, false), {
+    "you", "why?", "", "agent · question", "keep it?",
+  })
+  H.eq(api.nvim_win_get_config(ctx).title[1][1], " reply · a.txt:3 ")
+  vim.cmd("stopinsert")
+  vim.cmd("close")
+end
+
+T["editor"]["a session comment has no context, only its title"] = function()
+  local root = H.repo({ ["a.txt"] = "a\n" })
+  H.write(root, "a.txt", "b\n")
+  open(root)
+  workspace.actions.comment_session()
+  H.eq(other_floats(), {})
+  H.eq(api.nvim_win_get_config(0).title[1][1], " comment · session ")
+  vim.cmd("stopinsert")
+  vim.cmd("close")
+end
+
+T["editor"]["takes its size from the screen"] = function()
+  local root = H.repo({ ["a.txt"] = "a\n" })
+  H.write(root, "a.txt", "b\n")
+  open(root)
+  local columns, lines = vim.o.columns, vim.o.lines
+  vim.o.columns, vim.o.lines = 250, 80
+  workspace.actions.comment_session()
+  local size = { api.nvim_win_get_width(0), api.nvim_win_get_height(0) }
+  vim.cmd("stopinsert")
+  vim.cmd("close")
+  vim.o.columns, vim.o.lines = columns, lines
+  H.eq(size, { 150, 24 })
+end
+
+T["editor"]["no completion, suggestions or language servers in the comment buffer"] = function()
+  local root = H.repo({ ["a.txt"] = "a\n" })
+  H.write(root, "a.txt", "b\n")
+  open(root)
+  workspace.actions.comment_session()
+  local buf = api.nvim_get_current_buf()
+  H.eq(vim.bo[buf].filetype, "iz-comment")
+  -- Highlighted as markdown without being a markdown buffer.
+  H.eq(vim.treesitter.language.get_lang("iz-comment"), "markdown")
+  H.eq({ vim.b[buf].completion, vim.b[buf].copilot_enabled }, { false, false })
+  H.eq(vim.b[buf].copilot_suggestion_hidden, true)
+
+  -- A server that attaches to every buffer is detached again.
+  local fake = function()
+    return {
+      request = function(method, _, callback)
+        if method == "initialize" then
+          callback(nil, { capabilities = {} })
+        end
+        return true, 1
+      end,
+      notify = function()
+        return true
+      end,
+      is_closing = function()
+        return false
+      end,
+      terminate = function() end,
+    }
+  end
+  local config = { name = "everywhere", cmd = fake, root_dir = root }
+  local id = assert(vim.lsp.start(config, { bufnr = buf }))
+  MiniTest.finally(function()
+    local client = vim.lsp.get_client_by_id(id)
+    if client then
+      client:stop(true)
+    end
+  end)
+  H.eq(vim.wait(2000, function()
+    return #vim.lsp.get_clients({ bufnr = buf }) == 0
+  end, 10), true)
+
+  -- The placeholder shows only while the buffer is empty.
+  local function placeholder()
+    local ns = api.nvim_get_namespaces()["iz.editor"]
+    return #api.nvim_buf_get_extmarks(buf, ns, 0, -1, {}) > 0
+  end
+  H.eq(placeholder(), true)
+  api.nvim_buf_set_lines(buf, 0, -1, false, { "text" })
+  api.nvim_exec_autocmds("TextChanged", { buffer = buf })
+  H.eq(placeholder(), false)
+  vim.cmd("stopinsert")
+  vim.bo[buf].modified = false
+  vim.cmd("close")
 end
 
 T["close removes the tab, scratch buffers and the lock"] = function()

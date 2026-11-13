@@ -42,7 +42,7 @@ lua/iz/
   ui/highlights.lua  highlight groups (all `default = true`) and the shared namespace
   session/comments.lua  Comment / Reply model; Status and Claim rules
   session/anchor.lua    capture and relocation of Anchors (exact match only)
-  ui/editor.lua      floating markdown editor for comments and replies
+  ui/editor.lua      comment/reply editor: context on top, `iz-comment` input, no completion
   ui/inline.lua      open comments as virtual lines in the diff
   ui/panel.lua       comment panel rendering (pure render + draw): a summary per Comment
   ui/thread.lua      a Comment's whole thread in a float, with reply/resolve keys

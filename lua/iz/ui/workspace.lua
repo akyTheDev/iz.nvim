@@ -800,10 +800,12 @@ M.actions.prev_hunk = jump(-1)
 
 ---@param title string
 ---@param on_save fun(body: string, attachments: string[])
-local function write(title, on_save)
+---@param context? iz.EditorContext what the editor shows above the input
+local function write(title, on_save, context)
   editor.open({
     title = title,
     session = W.session,
+    context = context,
     on_save = function(body, attachments)
       on_save(body, attachments)
       draw_comments()
@@ -877,8 +879,14 @@ local function diff_comment(scope)
     local buf = api.nvim_win_get_buf(side == "old" and W.wins.left or W.wins.right)
     local lines = api.nvim_buf_get_lines(buf, 0, -1, false)
     local captured = anchor.capture(lines, first, last)
-    local path = W.path
-    local title = ("%s:%d%s"):format(path, first, last ~= first and ("-" .. last) or "")
+    local path = W.path --[[@as string]] -- diff_ctx() above means a file is shown
+    local range = last ~= first and ("-" .. last) or ""
+    local title = ("comment · %s:%d%s"):format(format.short_path(path), first, range)
+    local context = {
+      lines = vim.list_slice(lines, first, last),
+      filetype = vim.bo[buf].filetype,
+      first_line = first,
+    }
     write(title, function(body, attachments)
       comments.add(W.session, {
         scope = scope,
@@ -890,7 +898,7 @@ local function diff_comment(scope)
         body = body,
         attachments = attachments,
       })
-    end)
+    end, context)
   end
 end
 
@@ -902,7 +910,7 @@ function M.actions.comment_file()
   if not path or not writable() then
     return
   end
-  write(path, function(body, attachments)
+  write("comment · " .. format.short_path(path), function(body, attachments)
     comments.add(W.session, { scope = "file", file = path, body = body, attachments = attachments })
   end)
 end
@@ -911,7 +919,7 @@ function M.actions.comment_session()
   if not writable() then
     return
   end
-  write("session", function(body, attachments)
+  write("comment · session", function(body, attachments)
     comments.add(W.session, { scope = "session", body = body, attachments = attachments })
   end)
 end
@@ -974,9 +982,12 @@ local function reply(c)
   if not writable() then
     return
   end
-  write("reply · " .. format.location(c), function(body, attachments)
+  -- Answering means seeing what is being answered.
+  local lines, marks = thread.render(c)
+  local title = "reply · " .. format.short_path(format.location(c))
+  write(title, function(body, attachments)
     comments.reply(W.session, c, body, attachments)
-  end)
+  end, { lines = lines, marks = marks, filetype = "markdown" })
 end
 
 ---@param status "open"|"resolved"|"ignored"

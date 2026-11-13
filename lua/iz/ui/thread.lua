@@ -117,6 +117,12 @@ function M.open(c, actions)
   vim.wo[win].linebreak = true
   vim.wo[win].breakindent = true
   vim.wo[win].conceallevel = 2
+  vim.wo[win].winhighlight = table.concat({
+    "NormalFloat:IzFloat",
+    "FloatBorder:IzFloatBorder",
+    "FloatTitle:IzFloatTitle",
+    "FloatFooter:IzFloatFooter",
+  }, ",")
   -- Read-only text: keep markdown rendered on the cursor line too.
   vim.wo[win].concealcursor = "nc"
   vim.wo[win].signcolumn = "yes:1"
