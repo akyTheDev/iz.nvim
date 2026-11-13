@@ -131,8 +131,11 @@ When a second Neovim opens the same repository, its workspace is read-only.
 ==============================================================================
 4. COMMENTS                                                      *iz-comments*
 
-Comments are written in a floating markdown buffer. Save with <C-s> or `:w`,
-cancel with `q`. In insert mode <C-v> pastes a screenshot from the clipboard
+Comments are written in a float that shows, above the input, the code being
+commented on or the thread being answered. Save with <C-s> or `:w`, cancel
+with `q`. The input's filetype is `iz-comment`, highlighted as markdown:
+completion plugins (blink.cmp, nvim-cmp, mini.completion, Copilot) are turned
+off and language servers are detached in that buffer only. In insert mode <C-v> pastes a screenshot from the clipboard
 into the Session's `assets/` directory; without an image it inserts the next
 key literally, as usual.
 
@@ -184,6 +187,7 @@ never reach the Brief.
       summary_height = 5,
       preview_on_move = true,
       thread = { width = 0.6, height = 0.6 },
+      editor = { width = 0.6, height = 0.3 },
       keymaps = {
         paste_image = "<C-v>",
         files = { ... },
@@ -209,6 +213,7 @@ IzSuggestion        the co-reviewer's name in the panel
 IzSummary           the agent's Summary above the diff
 IzSummaryOutdated   a Summary whose file changed since
 IzThreadUser IzThreadAgent IzThreadCoreviewer   who wrote a message (thread)
+IzFloat IzFloatBorder IzFloatTitle IzFloatFooter   the thread and comment floats
 IzPartial           partly approved files and lost comments
 IzUnstaged          files with nothing approved yet
 IzDirectory         directory headers in the file list

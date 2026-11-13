@@ -140,6 +140,7 @@ require("iz").setup({
   summary_height = 5, -- diff'in üstündeki agent özetinin satır sayısı; 0 gizler
   preview_on_move = true, -- diff, dosya listesindeki imleci takip eder
   thread = { width = 0.6, height = 0.6 }, -- thread penceresi, ekranın oranı olarak
+  editor = { width = 0.6, height = 0.3 }, -- yorum editörü: genişlik ve yazma alanının yüksekliği
   keymaps = {
     paste_image = "<C-v>",
     files = { open = "<CR>", stage = "s", unstage = "u", discard = "x", undo_discard = "U",
@@ -156,7 +157,9 @@ require("iz").setup({
 })
 ```
 
-Bir tuşu kapatmak için `""` ver. Vurgu grupları (`IzStaged`, `IzNewSinceApproval`, `IzComment`, `IzClaim`, …) `default = true` ile tanımlıdır, yani renk temaların bunları ezebilir.
+Yorum editörü, neye yorum yazdığını (kodu ya da cevap verdiğin thread'i) yazma alanının üstünde gösterir. Buffer'ın kendi dosya türü vardır, `iz-comment`; markdown olarak renklendirilir, böylece tamamlama eklentileri ve dil sunucuları ona karışmaz. Bu sadece o buffer'ı etkiler.
+
+Bir tuşu kapatmak için `""` ver. Vurgu grupları (`IzStaged`, `IzNewSinceApproval`, `IzComment`, `IzClaim`, `IzFloat`, `IzFloatBorder`, …) `default = true` ile tanımlıdır, yani renk temaların bunları ezebilir.
 
 ## Dosyalar
 

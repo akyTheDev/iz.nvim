@@ -45,6 +45,20 @@ end
 
 local WHO = { user = "you", agent = "agent", coreviewer = "co-reviewer" }
 
+--- `path` as it fits in a title: whole, else with directories cut to their
+--- first letter, else just the file name.
+---@param path string
+---@param max? integer defaults to 48
+---@return string
+function M.short_path(path, max)
+  max = max or 48
+  if #path <= max then
+    return path
+  end
+  local short = vim.fn.pathshorten(path)
+  return #short <= max and short or vim.fs.basename(path)
+end
+
 ---@param m iz.Message
 ---@return string
 function M.who(m)
