@@ -108,6 +108,7 @@ require("iz").setup({
   files_width = 42,
   panel_width = 56,
   preview_on_move = true, -- diff, dosya listesindeki imleci takip eder
+  thread = { width = 0.6, height = 0.6 }, -- thread penceresi, ekranın oranı olarak
   keymaps = {
     paste_image = "<C-v>",
     files = { open = "<CR>", stage = "s", unstage = "u", discard = "x", undo_discard = "U",

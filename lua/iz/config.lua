@@ -6,6 +6,9 @@ M.defaults = {
   -- Moving through the file list shows the file under the cursor in the diff;
   -- `<CR>` still moves into it.
   preview_on_move = true,
+  -- The thread float, as a share of the screen; it grows past the height for
+  -- long threads.
+  thread = { width = 0.6, height = 0.6 },
   keymaps = {
     -- Insert-mode key in the comment editor; falls back to a literal <C-v>
     -- when the clipboard holds no image.
