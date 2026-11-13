@@ -361,6 +361,57 @@ T["comments"]["an inline comment fits its window, label included"] = function()
   H.eq(vim.fn.strcharpart(text, 39), "…")
 end
 
+T["comments"]["an inline comment's filler goes where the other diff side lines up"] = function()
+  local mirror = require("iz.ui.inline").mirror_line
+  -- Base 1..40 against: 3 lines inserted after 5, line 20 now two lines,
+  -- lines 30-31 deleted.
+  local hunks = {
+    { old_start = 5, old_count = 0, new_start = 6, new_count = 3 },
+    { old_start = 20, old_count = 1, new_start = 23, new_count = 2 },
+    { old_start = 30, old_count = 2, new_start = 33, new_count = 0 },
+  }
+  local cases = {
+    { "new", 2, 2 }, -- before every hunk
+    { "new", 7, 5 }, -- inside an insertion: under the line before it
+    { "new", 15, 12 }, -- after the insertion
+    { "new", 23, 20 }, -- paired line of a changed hunk
+    { "new", 24, 20 }, -- past the shorter side: its last line
+    { "new", 33, 29 }, -- right above the deletion
+    { "new", 40, 38 }, -- after everything
+    { "old", 30, 33 }, -- a deleted line: under the line before the gap
+    { "old", 38, 40 },
+  }
+  for _, case in ipairs(cases) do
+    H.eq({ case[1], case[2], mirror(hunks, case[1], case[2]) }, case)
+  end
+  -- Two lines grown to four: past the second, under the shorter side's last line.
+  local grown = { { old_start = 10, old_count = 2, new_start = 10, new_count = 4 } }
+  H.eq(mirror(grown, "new", 13), 11)
+  -- An insertion at the very top: the filler goes above the first line.
+  H.eq(mirror({ { old_start = 0, old_count = 0, new_start = 1, new_count = 2 } }, "new", 1), 0)
+end
+
+T["comments"]["an inline comment keeps the two diff sides in line"] = function()
+  local root = H.repo({ ["a.txt"] = H.lines(10) })
+  H.write(root, "a.txt", H.lines(10, { [2] = "two\nextra" }))
+  local ws = open(root)
+  api.nvim_set_current_win(ws.wins.right)
+  api.nvim_win_set_cursor(ws.wins.right, { 6, 0 })
+  workspace.actions.comment_line()
+  type_and_save("on six")
+
+  local ns = require("iz.ui.inline").ns
+  local function virt(win)
+    local buf = api.nvim_win_get_buf(win)
+    return vim.tbl_map(function(m)
+      return { m[2], #m[4].virt_lines }
+    end, api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true }))
+  end
+  -- Working tree line 6 is base line 5: one virtual line under each.
+  H.eq(virt(ws.wins.right), { { 5, 1 } })
+  H.eq(virt(ws.wins.left), { { 4, 1 } })
+end
+
 T["comments"]["opening the panel keeps the two diff sides the same width"] = function()
   local root = H.repo({ ["a.txt"] = "a\n" })
   H.write(root, "a.txt", "A\n")

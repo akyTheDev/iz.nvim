@@ -38,12 +38,56 @@ function M.virt_lines(c, width)
   return { chunks }
 end
 
+--- The line of the other diff side under which a filler goes, so a virtual
+--- line under `line` of `side` doesn't push the two sides out of line: diff
+--- mode doesn't count virtual lines. Inside a Hunk the filler goes on the
+--- paired line, or under the other side's last line of the Hunk when it is
+--- shorter; either way the two sides line up again after the Hunk.
+---@param hunks iz.DiffHunk[] between the left side and the working tree
+---@param side "old"|"new" the side the virtual line is on
+---@param line integer
+---@return integer other may be 0: the filler goes above the first line
+function M.mirror_line(hunks, side, line)
+  local this, other = side, side == "old" and "new" or "old"
+  local offset = 0
+  for _, h in ipairs(hunks) do
+    local start, count = h[this .. "_start"], h[this .. "_count"]
+    local o_start, o_count = h[other .. "_start"], h[other .. "_count"]
+    if count > 0 and start <= line and line < start + count then
+      local k = line - start + 1
+      if k <= o_count then
+        return o_start + k - 1
+      end
+      -- For an empty block `o_start` is the line before it.
+      return o_count > 0 and o_start + o_count - 1 or o_start
+    end
+    local before = (count > 0 and start + count - 1 < line) or (count == 0 and start < line)
+    if before then
+      offset = offset + o_count - count
+    end
+  end
+  return line + offset
+end
+
+---@param buf integer
+---@param line integer may be 0: above the first line
+local function filler(buf, line)
+  local opts = { virt_lines = { { { "", "" } } } }
+  if line < 1 then
+    line, opts.virt_lines_above = 1, true
+  end
+  line = math.min(line, api.nvim_buf_line_count(buf))
+  pcall(api.nvim_buf_set_extmark, buf, M.ns, line - 1, 0, opts)
+end
+
 ---@param ctx iz.DiffContext
 function M.draw(ctx)
   local left = api.nvim_win_get_buf(ctx.left_win)
   local right = api.nvim_win_get_buf(ctx.right_win)
   api.nvim_buf_clear_namespace(left, M.ns, 0, -1)
   api.nvim_buf_clear_namespace(right, M.ns, 0, -1)
+  local u = ctx.file.unstaged_diff
+  local hunks = ctx.left_rev == "index" and (u and u.hunks or {}) or ctx.file.hunks
 
   for _, c in ipairs(comments.for_file(ctx.session, ctx.file.path)) do
     if c.status == "open" and c.line then
@@ -56,9 +100,13 @@ function M.draw(ctx)
         local width = api.nvim_win_get_width(win) - (info and info.textoff or 0)
         -- A lost comment stays at its last known line: the fix is usually right there.
         local row = math.min((c.end_line or c.line) - 1, api.nvim_buf_line_count(buf) - 1)
-        pcall(api.nvim_buf_set_extmark, buf, M.ns, math.max(row, 0), 0, {
+        row = math.max(row, 0)
+        local ok = pcall(api.nvim_buf_set_extmark, buf, M.ns, row, 0, {
           virt_lines = M.virt_lines(c, width),
         })
+        if ok then
+          filler(old and right or left, M.mirror_line(hunks, old and "old" or "new", row + 1))
+        end
       end
     end
   end
