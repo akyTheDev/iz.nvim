@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/akyTheDev/iz.nvim/compare/v2.0.0...v2.1.0) (2026-11-13)
+
+
+### Features
+
+* a comment editor that shows what you answer, without completion popups ([#8](https://github.com/akyTheDev/iz.nvim/issues/8)) ([e65478a](https://github.com/akyTheDev/iz.nvim/commit/e65478ae37ec7f07cfebfda05f655a078a00afa8))
+
 ## [2.0.0](https://github.com/akyTheDev/iz.nvim/compare/v1.1.0...v2.0.0) (2026-11-13)
 
 
