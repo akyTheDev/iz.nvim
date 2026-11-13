@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/akyTheDev/iz.nvim/compare/v1.0.1...v1.1.0) (2026-11-13)
+
+
+### Features
+
+* preview files from the list and a roomier thread float ([#3](https://github.com/akyTheDev/iz.nvim/issues/3)) ([41b3561](https://github.com/akyTheDev/iz.nvim/commit/41b35615ef51d60f0cc9bf0d6a1833e4d7346ff8))
+
 ## [1.0.1](https://github.com/akyTheDev/iz.nvim/compare/v1.0.0...v1.0.1) (2026-11-12)
 
 
